@@ -1,0 +1,41 @@
+Reported_Class	Rarity	Genes	Count of resistance loci
+AMINOGLYCOSIDE	Rare	aac(2')-IIa, aac(3)-IId, aac(3)-IIe, aac(3)-IIg, aac(3)-IVa, aac(3)-Ic, aac(3)-VIa, aac(6')-IIa, aac(6')-IIc, aac(6')-Ib, aac(6')-Ib3, aac(6')-Ib4, aac(6')-Il, aac(6')-Im, aad9, aadA1, aadA16, aadA2, aadA22, aadA3, aadA4, aadA5, aadA8, ant(2'')-Ia, ant(9)-Ia, aph(3')-IIa, aph(3')-Ia, aph(3')-VI, aph(3')-VIb, aph(4)-Ia, aph(6)-Ic, armA, rmtB1, rmtC, rmtF1	35
+AMINOGLYCOSIDE	Uncommon	aph(3'')-Ib, aph(6)-Id	2
+AMINOGLYCOSIDE/QUINOLONE	Rare	aac(6')-Ib-cr, aac(6')-Ib-cr5	2
+BETA-LACTAM	Rare	blaCARB-2, blaLAP, blaLAP-2, blaOXA, blaOXA-2, blaOXA-9, blaSFO-1, blaSHV, blaSHV-1, blaTEM, blaTEM-116, blaTEM-135, blaTEM-176, blaTEM-190, blaTEM-215, blaTEM-30, blaTEM-32, blaTEM-33, blaTEM-34, blaTEM-35, blaTEM-40	21
+BETA-LACTAM	Uncommon	blaTEM-1	1
+BETA-LACTAM POINT	Rare	ampC_C-11T, ampC_C-42T, ampC_T-14TGT, ampC_T-32A, ftsI_I336IKYRI, ftsI_I336IPYRI, ftsI_N337NYRIN	7
+BLEOMYCIN	Rare	ble, bleO	2
+CARBAPENEM	Rare	blaIMI-2, blaIMP, blaIMP-26, blaIMP-4, blaKPC-2, blaNDM-1, blaNDM-4, blaNDM-5, blaNDM-6, blaNDM-7, blaOXA-181, blaOXA-23, blaOXA-232, blaOXA-244, blaOXA-48, blaOXA-484, blaVIM-1	17
+CEPHALOSPORIN	Rare	blaCMY, blaCMY-141, blaCMY-145, blaCMY-146, blaCMY-148, blaCMY-16, blaCMY-173, blaCMY-2, blaCMY-4, blaCMY-42, blaCMY-43, blaCMY-6, blaCMY-62, blaCTX-M, blaCTX-M-1, blaCTX-M-101, blaCTX-M-104, blaCTX-M-123, blaCTX-M-14, blaCTX-M-15, blaCTX-M-182, blaCTX-M-189, blaCTX-M-220, blaCTX-M-24, blaCTX-M-27, blaCTX-M-3, blaCTX-M-55, blaCTX-M-62, blaCTX-M-65, blaCTX-M-8, blaCTX-M-9, blaDHA-1, blaDHA-6, blaOXA-1, blaOXA-10, blaSHV-12, blaSHV-2, blaTEM-168, blaTEM-169, blaTEM-29, blaVEB-17, blaVEB-5	42
+COLISTIN	Rare	mcr-1.1, mcr-9.1, mcr-9.2	3
+COLISTIN POINT	Rare	pmrB_C84Y, pmrB_P94S, pmrB_V161G	3
+EFFLUX	Freqeunt	emrD, mdtM	2
+EFFLUX	Ubiquitous	acrF	1
+FOSFOMYCIN	Rare	fosA10, fosA3, fosA4, fosA7.5	4
+FOSFOMYCIN POINT	Rare	ptsI_V25I	1
+FOSFOMYCIN POINT	Ubiquitous	glpT_E448K	1
+FOSFOMYCIN POINT	Uncommon	uhpT_E350Q	1
+FOSMIDOMYCIN POINT	Uncommon	cyaA_S352T	1
+ISONIAZID/TRICLOSAN POINT	Rare	fabI_F203L	1
+LINCOSAMIDE	Rare	lnu(C), lnu(F), lnu(G)	3
+MACROLIDE	Rare	ere(A), erm(42), erm(A), erm(B), mef(B), mph(E), msr(E)	7
+MACROLIDE	Uncommon	mph(A)	1
+MULTIDRUG POINT	Rare	acrR_R45C, marR_S3N, soxR_G121D, soxS_A12S	4
+NITROFURAN POINT	Rare	nfsA_E223STOP, nfsA_G131D, nfsA_K141STOP, nfsA_Q44STOP, nfsA_R15C, nfsA_R203C, nfsA_S33R	7
+PHENICOL	Rare	catA1, catA2, catB, catB3, catB8, cmlA1, cmlA5, cmlA6, cmx, floR, floR2	11
+PHENICOL/QUINOLONE	Rare	oqxA, oqxA2, oqxB, oqxB2	4
+QUINOLONE	Rare	qepA, qepA1, qepA4, qepA8, qepA9, qnrA1, qnrA6, qnrB1, qnrB19, qnrB2, qnrB4, qnrB6, qnrB7, qnrD1, qnrS, qnrS1, qnrS13	17
+QUINOLONE POINT	Rare	gyrA_D87Y, gyrA_G81C, gyrA_S83A, gyrA_S83V, parC_A108T, parC_A108V, parC_A56T, parC_E84G, parC_E84K, parC_E84V, parC_G78C, parC_S57T, parC_S80R, parE_D475E, parE_E460D, parE_E460K, parE_I355T, parE_I444F, parE_I464F, parE_I529L, parE_L416F, parE_L445H, parE_S458A, parE_S458T	24
+QUINOLONE POINT	Uncommon	gyrA_D87N, gyrA_S83L, parC_S80I	3
+QUINOLONE/TRICLOSAN POINT	Rare	gyrA_D87G, gyrA_D87H	2
+RIFAMYCIN	Rare	arr, arr-2, arr-3	3
+RIFAMYCIN POINT	Rare	rpoB_I572L, rpoB_Q513L, rpoB_S531F, rpoB_V146F	4
+STREPTOTHRICIN	Rare	sat2	1
+SULFONAMIDE	Rare	sul3	1
+SULFONAMIDE	Uncommon	sul1, sul2	2
+SULFONAMIDE POINT	Rare	folP_P64S	1
+TETRACYCLINE	Rare	tet(B), tet(C), tet(D), tet(M)	4
+TETRACYCLINE	Uncommon	tet(A)	1
+TRIMETHOPRIM	Rare	dfrA1, dfrA12, dfrA14, dfrA15, dfrA16, dfrA19, dfrA21, dfrA27, dfrA29, dfrA35, dfrA36, dfrA4, dfrA5, dfrA7, dfrA8, dfrB4	16
+TRIMETHOPRIM	Uncommon	dfrA17	1
