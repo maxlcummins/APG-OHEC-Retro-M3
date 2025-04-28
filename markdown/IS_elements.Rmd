@@ -1,0 +1,399 @@
+---
+title: "Plasmid Manuscript"
+author: "Max Cummins"
+date: "2024-05-16"
+output:
+  html_document: 
+    code_folding: hide
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+#Read in our packages
+library(tidyverse)
+library(vroom)
+library(ggplot2)
+library(xml2)
+library(ggrepel)
+library(caret)
+library(here)
+library(scales)
+library(plotly)
+library(ComplexHeatmap)
+library(grid)
+library(ComplexUpset)
+library(hues)
+library(ggpubr)
+library(tidyHeatmap)
+
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE,
+	root.dir = here::here()
+)
+#Define our not in function
+`%nin%` <- Negate(`%in%`)
+```
+
+## Define our color scheme
+```{r}
+#Overwrite with different colours
+source_cols <- c("Companion Animal" = "#59398d",
+         "Environmental" = "#709b46",
+         "Food" = "#c09f3d",
+         "Human" = "#48c595",
+         "Livestock" =  "#c26bbc",
+         "Wild Animal" = "#b9553d")
+
+#Create fake colour for header
+phylogroup_header <- c(NA)
+names(phylogroup_header) <- 'Phylogroups'
+
+#Define our colours for our phylogroups
+clermont_cols <- c('#ffe119', '#4363d8', '#f58231', '#dcbeff', '#800000', '#000075', '#9A6324', 'red', '#3cb44b',  'white', '#a9a9a9', 'black')
+
+#Assign our color names for phylogroups
+names(clermont_cols) <- c("A", "B1",  "B2", "C", "D", "E", "F", "G", "E or cladeI", "cladeI", "cladeIII", "cladeIV")
+```
+
+
+## Read in our tree and genomic and metadata dataset
+
+```{r Merge_analysis_outputs, include=FALSE}
+
+genometa <- vroom("delims/genometa_n5471.txt", show_col_types = FALSE)
+
+#Read in our tree
+tree <- ggtree::read.tree("analysis/RapidNJ_5471.nwk")
+
+#Remove quotes from sample names
+tree$tip.label <- gsub("'", '', tree$tip.label)
+tree$tip.label <- gsub("\\.fa", "", tree$tip.label)
+
+#Create a list of samples in our cohort
+sample_names <- tree$tip.label %>% as.data.frame() %>% rename('name' = '.')
+
+#Read in abritamr data in long format
+#abritamr_long <- vroom("delims/long_format_abritamr_5471.txt", show_col_types = FALSE)
+
+```
+
+```{r}
+library(ggalluvial)
+genometa %>% mutate(ST_other = fct_lump_n(ST_new, n = 20)) %>% mutate(Consensus_phylogroup_other = fct_lump_n(Consensus_phylogroup, n = 8)) %>% select(State, Revised_Source_Niche, Consensus_phylogroup_other, ST_other) %>%
+        group_by(State, Revised_Source_Niche, Consensus_phylogroup_other, ST_other) %>%
+        add_count() %>%
+        rename('Freq' = n) %>%
+        ggplot(aes(axis1 = State, axis2 = Revised_Source_Niche, axis3 = Consensus_phylogroup_other, axis4 = ST_other)) +
+          scale_x_discrete(limits = c("State", "Revised_Source_Niche", "Consensus_phylogroup_other", "ST_other"), expand = c(.2, .05)) +
+          xlab("Demographic") +
+          geom_alluvium(aes(fill = Revised_Source_Niche)) +
+          geom_stratum() +
+          geom_text(stat = "stratum", aes(label = after_stat(stratum))) +
+          theme_minimal() +
+          ggtitle("passengers on the maiden voyage of the Titanic",
+                  "stratified by demographics and survival") +
+        scale_fill_manual(values = source_cols)
+```
+
+
+Next we sought to gain insight into which insertion sequences are common within the collection.
+
+We explored:
+
+- Overall prevalence 
+- Within ST prevalence
+- Within Phylogroup prevalence
+
+```{r}
+
+# Create a list of unwanted phylogroups for later filtering
+unwanted_phylos <- c("cladeI", "cladeIII", "cladeIV", 'Unknown', 'E or cladeI')
+
+# Read in our ISfinder data
+ISfinder <- genometa %>% select(name, ST_new, Consensus_phylogroup, Revised_Source_Niche, matches('ISfinder')) %>% group_by(Consensus_phylogroup) %>% add_count() %>% rename('count_of_phylogroup' = n)
+
+# Create a long format of the ISfinder data
+ISfinder_long <- ISfinder %>% pivot_longer(cols = matches('ISfinder'), names_to = 'IS', values_to = 'Presence') %>% filter(Presence == '1') %>% select(-Presence)
+
+# Trim "ABRICATE.." from the ISfinder names
+ISfinder_long <- ISfinder_long %>% mutate(IS = str_replace(IS, pattern = ".*_(IS|MITE|Tn)", replacement = "\\1"))
+
+# Trim accession numbers from the end
+ISfinder_long <- ISfinder_long %>% mutate(IS = str_replace(IS, pattern = ":.*", replacement = ""))
+
+# Remove duplicate hits for the same IS element
+ISfinder_long <- ISfinder_long %>% unique()
+
+# Count the number of times each IS is present
+ISfinder_count <- ISfinder_long %>% count(IS) %>% arrange(desc(n))
+
+# Create a plot of the top 10 IS elements
+ISfinder_count %>% slice_max(n, n = 10) %>% ggplot(aes(x = reorder(IS, n), y = n, fill = IS)) +
+  geom_col() +
+  coord_flip() +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  labs(x = "IS Element", y = "Number of Samples", title = "Top 10 IS Elements in the Collection")
+
+# Calculate the top 10 IS elements
+top5_by_phylogroup <- ISfinder_long %>%
+        group_by(IS, Consensus_phylogroup) %>%
+        filter(Consensus_phylogroup %nin% unwanted_phylos) %>% 
+        tally(sort = T) %>%
+        ungroup() %>% 
+        group_by(Consensus_phylogroup) %>%
+        slice_max(n, n = 5) %>% 
+        pull(IS)
+
+# Filter the data for the top 10 IS elements and create the plot
+ISfinder_long %>%
+        filter(Consensus_phylogroup %nin% unwanted_phylos) %>% 
+  filter(IS %in% top5_by_phylogroup) %>%
+        #Convert to a proportion within phylogroup
+        group_by(Consensus_phylogroup, IS) %>%
+        add_count() %>%
+        mutate(n = n/count_of_phylogroup) %>%
+  ggplot(aes(x = IS, fill = Consensus_phylogroup)) +
+  geom_bar() +
+        # Rotate x-axis labels and give minimal theme
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+        # Set colours for phylogroups to the clermont scheme
+  scale_fill_manual(values = clermont_cols) +
+
+  labs(
+    x = "IS Element",
+    y = "Number of Genomes",
+    title = "Top 5 IS Elements per Phylogroup"
+  )
+```
+
+```{r}
+# Create a list of unwanted phylogroups for later filtering
+unwanted_phylos <- c("cladeI", "cladeIII", "cladeIV", 'Unknown', 'E or cladeI')
+
+# Read in our ISfinder data
+plasmids <- genometa %>% select(name, ST_new, Consensus_phylogroup, Revised_Source_Niche, matches('plasmidfinder')) %>% group_by(Consensus_phylogroup) %>% add_count() %>% rename('count_of_phylogroup' = n)
+
+# Create a long format of the ISfinder data
+df <- plasmids %>% pivot_longer(cols = matches('plasmidfinder'), names_to = 'Plasmid', values_to = 'Presence') %>% filter(Presence == '1') %>% select(-Presence)
+
+# Trim "ABRICATE.." from the ISfinder names
+df <- df %>% mutate(Plasmid = str_replace(Plasmid, pattern = ".*plasmidfinder_", replacement = ""))
+
+# Remove subclustering at end (e.g. IncX4_1 and IncX4_2 --> IncX4)
+df <- df %>% mutate(Plasmid = str_replace(Plasmid, pattern = "_[0-9]$", replacement = "")) %>% unique()
+
+# Remove duplicate hits for the same IS element
+df <- df %>% unique()
+
+# Count the number of times each IS is present
+df_count <- df %>% count(Plasmid) %>% arrange(desc(n))
+
+# Create a plot of the top 10 IS elements
+df_count %>% slice_max(n, n = 20) %>% ggplot(aes(x = reorder(Plasmid, n), y = n, fill = Plasmid)) +
+  geom_col() +
+  coord_flip() +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  labs(x = "Plasmid", y = "Number of Samples", title = "Top 20 Plasmids Elements in the Collection")
+
+#Define levels for plasmids
+plasmid_levels <- df %>% group_by(Plasmid) %>% add_count() %>% arrange(desc(n)) %>% pull(Plasmid) %>% unique()
+
+# Convert plasmids to factors
+df$Plasmid <- factor(df$Plasmid, levels = plasmid_levels)
+
+
+# Calculate the top 10 Plasmids
+top5_by_phylogroup <- df %>%
+        group_by(Plasmid, Consensus_phylogroup) %>%
+        filter(Consensus_phylogroup %nin% unwanted_phylos) %>% 
+        tally(sort = T) %>%
+        ungroup() %>% 
+        group_by(Consensus_phylogroup) %>%
+        slice_max(n, n = 10) %>% 
+        pull(Plasmid)
+
+# Filter the data for the top 10 IS elements and create the plot
+df %>%
+        filter(Consensus_phylogroup %nin% unwanted_phylos) %>% 
+  filter(Plasmid %in% top5_by_phylogroup) %>%
+        #Convert to a proportion within phylogroup
+        group_by(Consensus_phylogroup, Plasmid) %>%
+        add_count() %>%
+        mutate(n = n/count_of_phylogroup) %>%
+  ggplot(aes(x = Plasmid, fill = Consensus_phylogroup)) +
+  geom_bar() +
+        # Rotate x-axis labels and give minimal theme
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+        # Set colours for phylogroups to the clermont scheme
+  scale_fill_manual(values = clermont_cols) +
+        # Sort the x axis by frequency
+  scale_x_discrete(limits = ) +
+        
+  labs(
+    x = "Plasmid",
+    y = "Number of Genomes",
+    title = "Top 5 Plasmids per Phylogroup"
+  )
+```
+```{r}
+# Create a list of unwanted phylogroups for later filtering
+unwanted_phylos <- c("cladeI", "cladeIII", "cladeIV", 'Unknown', 'E or cladeI')
+
+# Read in our ISfinder data
+o_types <- genometa %>% select(name, ST_new, Consensus_phylogroup, Revised_Source_Niche, `ectyper..O-type`) %>% group_by(Consensus_phylogroup) %>% add_count() %>% rename('count_of_phylogroup' = n)
+
+# Trim "ABRICATE.." from the ISfinder names
+df <- o_types %>% rename("O_type" = `ectyper..O-type`)
+
+# Remove duplicate hits for the same IS element
+df <- df %>% unique()
+
+# Count the number of times each IS is present
+df_count <- df %>% count(O_type) %>% arrange(desc(n))
+
+# Create a plot of the top 10 IS elements
+df_count %>% slice_max(n, n = 20) %>% ggplot(aes(x = reorder(O_type, n), y = n, fill = O_type)) +
+  geom_col() +
+  coord_flip() +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  labs(x = "Plasmid", y = "Number of Samples", title = "Top 20 O_types Elements in the Collection")
+
+#Define levels for plasmids
+O_type_levels <- df %>% group_by(O_type) %>% add_count() %>% arrange(desc(n)) %>% pull(O_type) %>% unique()
+
+# Convert plasmids to factors
+df$O_type <- factor(df$O_type, levels = O_type_levels)
+
+
+# Calculate the top 10 Plasmids
+top5_by_phylogroup <- df %>%
+        group_by(O_type, Consensus_phylogroup) %>%
+        filter(Consensus_phylogroup %nin% unwanted_phylos) %>% 
+        tally(sort = T) %>%
+        ungroup() %>% 
+        group_by(Consensus_phylogroup) %>%
+        slice_max(n, n = 10) %>% 
+        pull(O_type)
+
+# Filter the data for the top 10 IS elements and create the plot
+df %>%
+        filter(Consensus_phylogroup %nin% unwanted_phylos) %>% 
+  filter(O_type %in% top5_by_phylogroup) %>%
+        #Convert to a proportion within phylogroup
+        group_by(Consensus_phylogroup, O_type) %>%
+        add_count() %>%
+        mutate(n = n/count_of_phylogroup) %>%
+  ggplot(aes(x = O_type, fill = Consensus_phylogroup)) +
+  geom_bar() +
+        # Rotate x-axis labels and give minimal theme
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+        # Set colours for phylogroups to the clermont scheme
+  scale_fill_manual(values = clermont_cols) +
+        # Sort the x axis by frequency
+  scale_x_discrete(limits = ) +
+        
+  labs(
+    x = "O_type",
+    y = "Number of Genomes",
+    title = "Top 5 O_type per Phylogroup"
+  )
+```
+
+```{r}
+# Create a list of unwanted phylogroups for later filtering
+unwanted_phylos <- c("cladeI", "cladeIII", "cladeIV", 'Unknown', 'E or cladeI')
+
+# Read in our ISfinder data
+df1 <- genometa %>% select(name, ST_new, Consensus_phylogroup, Revised_Source_Niche, matches('vfdb|EC_custom'))
+
+df1 %>% select()
+
+# Create a long format of the ISfinder data
+df2 <- df1 %>% pivot_longer(cols = matches('vfdb|EC_custom'), names_to = 'VAG', values_to = 'Presence') %>% filter(Presence == '1') %>% select(-Presence)
+
+# Trim "ABRICATE.." from the ISfinder names
+df2 <- df2 %>% mutate(VAG = str_replace(VAG, pattern = "ABRICATE..EC_custom_([^_]+)_.*", replacement = "\\1"))
+
+# Trim "ABRICATE.." from the ISfinder names
+df2 <- df2 %>% mutate(VAG = str_replace(VAG, pattern = "ABRICATE..vfdb_", replacement = ""))
+
+# Collapse members of the same operon into a single column
+df2 <- df2 %>% mutate(VAG = str_replace(VAG, pattern = "[A-Z]$", replacement = "")) %>% unique()
+
+# Collapse members of the same operon into a single column
+df2 <- df2 %>% mutate(VAG = str_replace(VAG, pattern = "\\/ecp", replacement = "")) %>% unique()
+
+# Collapse members of the same operon into a single column
+df2 <- df2 %>% mutate(VAG = str_replace(VAG, pattern = "[A-Z]$", replacement = "")) %>% unique()
+
+
+# Remove duplicate hits for the same IS element
+df2 <- df2 %>% unique()
+
+# Count the number of times each IS is present
+df_count <- df2 %>% count(VAG) %>% arrange(desc(n))
+
+# Create a plot of the top 10 IS elements
+df_count %>% slice_max(n, n = 20) %>% ggplot(aes(x = reorder(VAG, n), y = n, fill = VAG)) +
+  geom_col() +
+  coord_flip() +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  labs(x = "Plasmid", y = "Number of Samples", title = "Top 20 VAGs Elements in the Collection")
+
+# Calculate the top 10 Plasmids
+top5_by_phylogroup <- df2 %>%
+        group_by(VAG, Consensus_phylogroup) %>%
+        filter(Consensus_phylogroup %nin% unwanted_phylos) %>% 
+        tally(sort = T) %>%
+        ungroup() %>% 
+        group_by(Consensus_phylogroup) %>%
+        slice_max(n, n = 10) %>% 
+        pull(VAG)
+
+# Filter the data for the top 10 IS elements and create the plot
+df2 %>%
+        filter(Consensus_phylogroup %nin% unwanted_phylos) %>% 
+  filter(VAG %in% top5_by_phylogroup) %>%
+        #Convert to a proportion within phylogroup
+        group_by(Consensus_phylogroup, VAG) %>%
+        add_count() %>%
+  ggplot(aes(x = VAG, fill = Consensus_phylogroup)) +
+  geom_bar() +
+        # Rotate x-axis labels and give minimal theme
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+        # Set colours for phylogroups to the clermont scheme
+  scale_fill_manual(values = clermont_cols) +
+  labs(
+    x = "VAGs",
+    y = "Number of Genomes",
+    title = "Top 5 VAGs per Phylogroup"
+  )
+
+df2 |>
+        mutate("Present" = 1) |>
+        select(-ST_new) |>
+        heatmap(
+                `name`, 
+                VAG, 
+                Present
+                ) |>
+        add_tile(
+                Consensus_phylogroup, 
+                palette = clermont_cols
+                ) |>
+        add_tile(
+                Revised_Source_Niche, 
+                palette = source_cols
+                )
+```
+

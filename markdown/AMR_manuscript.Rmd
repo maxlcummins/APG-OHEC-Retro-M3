@@ -1,0 +1,178 @@
+---
+title: "Plasmid Manuscript"
+author: "Max Cummins"
+date: "2024-05-16"
+output:
+  html_document: 
+    code_folding: hide
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+#Read in our packages
+library(tidyverse)
+library(vroom)
+library(ggplot2)
+library(xml2)
+library(ggrepel)
+library(caret)
+library(here)
+library(scales)
+library(plotly)
+library(ComplexHeatmap)
+library(grid)
+library(ComplexUpset)
+library(hues)
+library(ggpubr)
+
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE,
+	root.dir = here::here()
+)
+#Define our not in function
+`%nin%` <- Negate(`%in%`)
+```
+
+## Define our color scheme
+```{r}
+#Overwrite with different colours
+source_cols <- c("Companion Animal" = "#59398d",
+         "Environmental" = "#709b46",
+         "Food" = "#c09f3d",
+         "Human" = "#48c595",
+         "Livestock" =  "#c26bbc",
+         "Wild Animal" = "#b9553d")
+
+#Create fake colour for header
+phylogroup_header <- c(NA)
+names(phylogroup_header) <- 'Phylogroups'
+
+#Define our colours for our phylogroups
+clermont_cols <- c('#ffe119', '#4363d8', '#f58231', '#dcbeff', '#800000', '#000075', '#9A6324', 'red', '#3cb44b',  'white', '#a9a9a9', 'black', 'purple')
+
+#Assign our color names for phylogroups
+names(clermont_cols) <- c("A", "B1",  "B2", "C", "D", "E", "F", "G", "E or cladeI", "cladeI", "cladeIII", "cladeIV", "Unknown")
+```
+
+
+## Read in our tree and genomic and metadata dataset
+
+```{r Merge_analysis_outputs, include=FALSE}
+
+genometa <- vroom("delims/genometa_n5471.txt", show_col_types = FALSE)
+
+#Read in our tree
+tree <- ggtree::read.tree("analysis/RapidNJ_5471.nwk")
+
+#Remove quotes from sample names
+tree$tip.label <- gsub("'", '', tree$tip.label)
+tree$tip.label <- gsub("\\.fa", "", tree$tip.label)
+
+#Create a list of samples in our cohort
+sample_names <- tree$tip.label %>% as.data.frame() %>% rename('name' = '.')
+
+#Read in abritamr data in long format
+#abritamr_long <- vroom("delims/long_format_abritamr_5471.txt", show_col_types = FALSE)
+
+```
+
+## Determine CIA res status
+```{r count CIA res, echo=FALSE, fig.height=8, fig.width=12}
+
+#Read in abritamr data
+abritamr <- read_delim("analysis/abritamr_resistance.txt", 
+    delim = "\t", escape_double = FALSE, 
+    trim_ws = TRUE,
+    show_col_types = FALSE)
+
+#Create a list of samples in our tree
+sample_names <- tree$tip.label %>% as.data.frame() %>% rename('name' = '.') %>% mutate(name = str_replace_all(name, "\\'", ''))
+
+#Filter out samples not in the tree, add in those missing from dataframe
+abritamr<- left_join(sample_names, abritamr)
+```
+
+```{r}
+#Take a small sample of our dataset for testing
+
+set.seed(1)
+
+abritamr <- abritamr %>% slice_sample(n = 100)
+```
+
+```{r}
+abritamr_long <- abritamr %>%
+        pivot_longer(cols = -name, names_to = "resistance", values_to = "gene") %>%
+        separate_rows(gene, sep = ",") %>% mutate(Present = 1)
+
+abritamr_longer <- abritamr_long %>% pivot_wider(names_from = gene, values_from = Present, values_fill = 0) %>% select(-resistance) %>% pivot_longer(cols = -name, names_to = 'gene', values_to = 'present')
+
+abritamr_longer <- abritamr_longer %>% filter(gene != "NA") %>% unique()
+
+res_gene <- abritamr_long %>% select(resistance, gene) %>% unique()
+```
+
+```{r}
+library(tidyHeatmap)
+
+abritamr_long_w_source <- genometa |>
+        select(name, Revised_Source_Niche, Consensus_phylogroup) |>
+        left_join(abritamr_longer, by = 'name') |>
+        left_join(res_gene, by = 'gene') |>
+        unique() 
+
+abritamr_long_w_source <- abritamr_long_w_source %>%
+        mutate(resistance = if_else(gene == "aac(6')-Ib", "Amikacin/Kanamycin/Tobramycin", resistance)) %>% unique() %>% group_by(name, gene, resistance) %>% arrange(desc(present)) %>% slice_head(n = 1)
+
+CIA_classes <- c('Carbapenemase',
+                 'Colistin',
+                 'Amikacin',
+                 'Aminoglycosides (Ribosomal methyltransferase)',
+                 'Kanamycin',
+                 'Streptomycin',
+                 'Rifamycin',
+                 'Rifampicin',
+                 'Ampicillin',
+                 'Aztreonam',
+                 'Apramycin',
+                 'Carbapenemase (MBL)',
+                 'Fosfomycin',
+                 'Gentamycin',
+                 'Other aminoglycoside resistance (non-RMT)',
+                 'Tobramycin')
+
+HP_CIA_classes <- c('Macrolide',
+                    'ESBL',
+                    'Quinolone')
+
+abritamr_long_w_source <- abritamr_long_w_source %>%
+  mutate(Antibiotic_class_status = case_when(
+    resistance %in% HP_CIA_classes ~ "HP-CIA",
+    resistance %in% CIA_classes ~ "CIA",
+    !resistance %in% c(CIA_classes, HP_CIA_classes) ~ "IA"
+  ))
+```
+
+```{r}
+
+abritamr_long_w_source |> 
+        separate_rows('resistance', sep = "/") |>
+        group_by(name, resistance)|>
+        mutate(count_of_ARGs_per_class = if_else(sum(present) > 0, 1, 0)) |>
+        ungroup() |>
+        filter(!is.na(gene)) |>
+        group_by(Consensus_phylogroup) |>
+        #group_by(Revised_Source_Niche) |>
+        heatmap(.column = resistance,
+                .row = name,
+                .value = count_of_ARGs_per_class,
+                palette_value = c("white", "blue", "red")) |>
+        add_tile(Consensus_phylogroup, palette = clermont_cols) |>
+        add_tile(Revised_Source_Niche, palette = source_cols)# |>
+        #add_tile(Antibiotic_class_status)
+        
+```
+
+

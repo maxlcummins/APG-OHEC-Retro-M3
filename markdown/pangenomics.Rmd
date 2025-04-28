@@ -1,0 +1,86 @@
+---
+title: "Pangenomics"
+author: "Max Cummins"
+date: "2024-10-29"
+output:
+  html_document: 
+    code_folding: hide
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+#Read in our packages
+library(tidyverse)
+library(vroom)
+library(ggplot2)
+library(xml2)
+library(ggrepel)
+library(caret)
+library(here)
+library(scales)
+library(plotly)
+library(ComplexHeatmap)
+library(grid)
+library(ComplexUpset)
+library(hues)
+library(ggpubr)
+
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE,
+	root.dir = here::here()
+)
+#Define our not in function
+`%nin%` <- Negate(`%in%`)
+```
+
+## Define our color scheme
+```{r}
+#Overwrite with different colours
+source_cols <- c("Companion Animal" = "#59398d",
+         "Environmental" = "#709b46",
+         "Food" = "#c09f3d",
+         "Human" = "#48c595",
+         "Livestock" =  "#c26bbc",
+         "Wild Animal" = "#b9553d")
+
+#Create fake colour for header
+phylogroup_header <- c(NA)
+names(phylogroup_header) <- 'Phylogroups'
+
+#Define our colours for our phylogroups
+clermont_cols <- c('#ffe119', '#4363d8', '#f58231', '#dcbeff', '#800000', '#000075', '#9A6324', 'red', '#3cb44b',  'white', '#a9a9a9', 'black')
+
+#Assign our color names for phylogroups
+names(clermont_cols) <- c("A", "B1",  "B2", "C", "D", "E", "F", "G", "E or cladeI", "cladeI", "cladeIII", "cladeIV")
+```
+
+
+## Read in our tree and genomic and metadata dataset
+
+```{r Merge_analysis_outputs, include=FALSE}
+
+genometa <- vroom("delims/genometa_n5471.txt", show_col_types = FALSE)
+
+#Read in our tree
+tree <- ggtree::read.tree("analysis/RapidNJ_5471.nwk")
+
+#Remove quotes from sample names
+tree$tip.label <- gsub("'", '', tree$tip.label)
+tree$tip.label <- gsub("\\.fa", "", tree$tip.label)
+
+#Create a list of samples in our cohort
+sample_names <- tree$tip.label %>% as.data.frame() %>% rename('name' = '.')
+
+#Read in abritamr data in long format
+#abritamr_long <- vroom("delims/long_format_abritamr_5471.txt", show_col_types = FALSE)
+
+```
+
+```{r}
+gene_presence_absence_roary <- read_csv("analysis/gene_presence_absence_roary.csv")
+
+gene_presence_absence_roary <- gene_presence_absence_roary %>% select(Gene:`Avg group size nuc`, any_of(sample_names$name))
+```
+

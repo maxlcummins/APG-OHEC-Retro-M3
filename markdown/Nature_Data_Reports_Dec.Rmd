@@ -1,0 +1,2441 @@
+---
+title: "Nature Data Reports"
+author: "Max Cummins"
+date: "2024-11-10"
+output:
+  html_document: 
+    code_folding: hide
+  pdf_document: default
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+#Read in our packages
+library(tidyverse)
+library(vroom)
+library(ggplot2)
+library(xml2)
+library(ggrepel)
+library(caret)
+library(here)
+library(scales)
+library(plotly)
+library(ComplexHeatmap)
+library(grid)
+library(ComplexUpset)
+library(hues)
+library(ggpubr)
+library(phytools)
+library(ggtree)
+library(ggtreeExtra)
+library(hues)
+
+knitr::opts_chunk$set(
+	message = FALSE,
+	warning = FALSE,
+	include = FALSE,
+	root.dir = here::here()
+)
+#Define our not in function
+`%nin%` <- Negate(`%in%`)
+```
+
+
+## Read in our tree and genomic and metadata dataset
+
+```{r Merge_analysis_outputs, include=FALSE}
+
+genometa <- vroom("delims/genometa_n5471.txt", show_col_types = FALSE)
+
+# Make a small metadata sheet for later use
+small_meta <- genometa %>%
+        dplyr::select(name, Revised_Source_Niche, ST_new, Consensus_phylogroup, `ABRICATE..EC_custom_intI1_HQ730118.1`) %>%
+        group_by(Consensus_phylogroup) %>%
+        add_count() %>%
+        rename(`Count of Phylogroup` = n) %>%
+        group_by(Revised_Source_Niche) %>%
+        add_count() %>%
+        rename(`Count of Source` = n) %>%
+        group_by(ST_new) %>%
+        add_count() %>%
+        rename(`Count of ST` = n) %>%
+        rename("Class 1 integrase" = `ABRICATE..EC_custom_intI1_HQ730118.1`) %>%
+        ungroup()
+
+# Make a table linking sources to their counts
+source_counts_df <- small_meta %>%
+        dplyr::select(Revised_Source_Niche, `Count of Source`) %>%
+        unique()
+
+# Make a table linking phylogroups to their counts
+phylo_counts_df <- small_meta %>%
+        dplyr::select(Consensus_phylogroup, `Count of Phylogroup`) %>%
+        unique()
+
+#Read in our tree
+tree <- ggtree::read.tree("analysis/RapidNJ_5471.nwk")
+
+# Midpoint root our tree
+tree <- midpoint_root(tree)
+
+#Remove quotes from sample names
+tree$tip.label <- gsub("'", '', tree$tip.label)
+tree$tip.label <- gsub("\\.fa", "", tree$tip.label)
+
+#Create a list of samples in our cohort
+sample_names <- tree$tip.label %>% as.data.frame() %>% rename('name' = '.')
+
+# Create a list of names and sources
+name_source <- genometa %>%
+        select(name, Revised_Source_Niche)
+
+# Create a list of names and STs
+name_ST <- genometa %>%
+        select(name, ST_new) %>%
+        mutate(ST_other = fct_lump_n(ST_new, n = 20))
+
+#Read in amrfinder data in long format
+#amrfinder_long <- vroom("delims/long_format_amrfinder_5471.txt", show_col_types = FALSE)
+
+```
+
+
+```{r Color_definitions, message=FALSE, warning=FALSE, include=FALSE}
+#Overwrite with different colours
+source_cols <- c("Companion Animal" = "#59398d",
+         "Environmental" = "#709b46",
+         "Food" = "#c09f3d",
+         "Human" = "#48c595",
+         "Livestock" =  "#c26bbc",
+         "Wild Animal" = "#b9553d")
+
+source_cols_w_total  <- c("Companion Animal" = "#59398d",
+         "Environmental" = "#709b46",
+         "Food" = "#c09f3d",
+         "Human" = "#48c595",
+         "Livestock" =  "#c26bbc",
+         "Wild Animal" = "#b9553d",
+         "Total" = "black")
+
+#Create fake colour for header
+phylogroup_header <- c(NA)
+names(phylogroup_header) <- 'Phylogroups'
+
+#Define our colours for our phylogroups
+clermont_cols <- c('#ffe119', '#4363d8', '#f58231', '#dcbeff', '#800000', '#000075', '#9A6324', 'red', '#3cb44b',  'white', '#a9a9a9', 'black', 'purple')
+
+#Assign our color names for phylogroups
+names(clermont_cols) <- c("A", "B1",  "B2", "C", "D", "E", "F", "G", "E or cladeI", "cladeI", "cladeIII", "cladeIV", "Unknown")
+
+# Create a list of unwanted phylogroups for later filtering
+unwanted_phylos <- c("cladeI", "cladeIII", "cladeIV", 'Unknown', 'E or cladeI')
+
+state_cols <-
+        c("ACT" = "blue",
+      "NSW" = "lightskyblue1",
+      "NT" = "darkorange2",
+      "QLD" = "maroon",
+      "SA" = "orangered",
+      "TAS" = "darkgreen",
+      "VIC" = "navy",
+      "WA" = "goldenrod1",
+      "Unknown" = "grey")
+
+
+
+```
+
+
+## Figure 1 - Collection breakdown
+```{r}
+
+library(ggalluvial)
+genometa %>% mutate(ST_other = fct_lump_n(ST_new, n = 20)) %>% mutate(Consensus_phylogroup_other = fct_lump_n(Consensus_phylogroup, n = 8)) %>% dplyr::select(State, Revised_Source_Niche, Consensus_phylogroup_other, ST_other) %>%
+        group_by(State, Revised_Source_Niche, Consensus_phylogroup_other, ST_other) %>%
+        add_count() %>%
+        rename('Freq' = n) %>%
+        ggplot(aes(axis1 = State, axis2 = Revised_Source_Niche, axis3 = Consensus_phylogroup_other, axis4 = ST_other)) +
+          scale_x_discrete(limits = c("State", "Revised_Source_Niche", "Consensus_phylogroup_other", "ST_other"), expand = c(.2, .05)) +
+          xlab("Demographic") +
+          geom_alluvium(aes(fill = Revised_Source_Niche)) +
+          geom_stratum() +
+          geom_text(stat = "stratum", aes(label = after_stat(stratum))) +
+          theme_minimal() +
+          ggtitle("passengers on the maiden voyage of the Titanic",
+                  "stratified by demographics and survival") +
+        scale_fill_manual(values = source_cols)
+
+
+```
+
+
+```{r Resistance_data_read}
+
+#Read in amrfinder data
+amrfinder <- read_delim("analysis/amrfinder_raw.txt", 
+    delim = "\t", escape_double = FALSE, 
+    trim_ws = TRUE,
+    show_col_types = FALSE)
+
+#Create a list of samples in our tree
+sample_names <- tree$tip.label %>% as.data.frame() %>% rename('name' = '.') %>% mutate(name = str_replace_all(name, "\\'", ''))
+
+#Filter out samples not in the tree, add in those missing from dataframe
+amrfinder<- left_join(sample_names, amrfinder)
+```
+
+```{r Resistance_Data_Processing}
+#Define our thresholds for coverage and identity
+coverage_threshold <- 90
+identity_threshold <- 90
+
+# Define genes we want to remove
+# Note gene names must match exactly
+genes_to_remove <- c("blaEC", "blaEC-5", # This gene is intrinsic to E. coli
+                      "mcr-9.1", "mcr-9.2") # This does not confer colistin resistance, only inducible colistin resistance
+
+# Remove genes we don't want
+amrfinder <- amrfinder %>% filter(!`Gene symbol` %in% genes_to_remove)
+
+#Create a table of the number of samples in each source and phylogroup
+name_source_phylo <- genometa %>%
+        dplyr::select(name, Revised_Source_Niche, Consensus_phylogroup) %>%
+        group_by(Revised_Source_Niche) %>%
+        add_count() %>%
+        rename('Count of Source' = n) %>%
+        group_by(Consensus_phylogroup) %>%
+        add_count() %>%
+        rename('Count of Phylogroup' = n) %>%
+        ungroup()
+
+# Separate point mutations which are required to have 100% coverage and identity
+point_mutations <- amrfinder %>%
+        filter(Subclass == "POINT") %>%
+        filter(`% Coverage of reference sequence` == 100 & `% Identity to reference sequence` == 100)
+
+# Remove point mutations and anything below identity thresholds
+amrfinder <- amrfinder %>%
+        filter(Subclass != "POINT") %>%
+        filter(`% Coverage of reference sequence` >= coverage_threshold & `% Identity to reference sequence` >= identity_threshold)
+
+# Bind point mutations back in
+amrfinder <- bind_rows(amrfinder, point_mutations)
+
+# Add a column to indicate the gene is present
+amrfinder <- amrfinder %>% mutate(Present = 1)
+
+# Remove duplicate hits within the same genome, prioritising hits with greater nucleotide identity
+amrfinder <- amrfinder %>% arrange(desc(`% Identity to reference sequence`)) %>% group_by(name, `Gene symbol`) %>% slice_head(n = 1) %>% ungroup()
+
+# Give our reporting category
+amrfinder <- amrfinder %>%
+        # Generate a new column for reported class
+        # Signal when genes are point mutation associated
+        mutate(Reported_Class = if_else(`Element subtype` == "POINT", paste0(Class, " POINT"), Class)) %>%
+        # Change beta-lactams to be the subclass
+        mutate(Reported_Class = if_else(Reported_Class == "BETA-LACTAM", Subclass, Reported_Class)) %>%
+        # Combine Streptothricin into aminoglycosides
+        mutate(Reported_Class = if_else(Reported_Class == "STREPTOTHRICIN", "AMINOGLYCOSIDE", Reported_Class)) %>%
+        # Combine Streptothricin into aminoglycosides
+        mutate(Reported_Class = if_else(Reported_Class %in% c("FOSMIDOMYCIN", "FOSFOMYCIN"), "PHOSPHONIC ACIDS", Reported_Class))  %>%
+        # Combine Streptothricin into aminoglycosides
+        mutate(Reported_Class = if_else(Reported_Class %in% c("FOSMIDOMYCIN POINT", "FOSFOMYCIN POINT"), "PHOSPHONIC ACIDS POINT", Reported_Class))
+
+# Generate a table which includes genome names, the class and subclass genes are present for
+amrfinder_class_wise <- amrfinder %>%
+        dplyr::select(name, `Element type`, `Element subtype`, Reported_Class, Present) %>%
+        separate_rows(Reported_Class, sep = "/") %>%
+        unique()
+```
+
+## Classwise AMR - Figure 2A
+
+```{r}
+# Compute the number of genomes from a given source which carry 1 or more genes from a given class of antibiotic
+amr_class_prev_by_source <- amrfinder_class_wise %>%
+        # Filter for the desired Element type                        
+        filter(`Element type` == "AMR") %>%
+
+        # Join with 'name_source_phylo' on 'name'
+        left_join(name_source_phylo, by = 'name') %>%
+        
+        # Group by Revised_Source_Niche and Reported_Class, then count occurrences
+        select(name, Revised_Source_Niche, `Count of Source`, Reported_Class) %>%
+                
+        # Group by Revised_Source_Niche and Reported_Class, then count occurrences
+        group_by(Revised_Source_Niche, Reported_Class) %>%
+        summarise(count = n(), .groups = 'drop') %>%
+        
+        # Ensure all combinations of Revised_Source_Niche and Reported_Class are present
+        complete(Revised_Source_Niche, Reported_Class, fill = list(count = 0)) %>%
+
+        # Join with 'name_source_phylo' on 'name'
+        left_join(source_counts_df, by = 'Revised_Source_Niche', relationship = 'many-to-many')
+
+# Generate totals across all sources
+ total_amr_class_prev_by_source <- amrfinder_class_wise %>%
+          # Filter for the desired Element type                        
+         filter(`Element type` == "AMR") %>%
+         group_by(Reported_Class) %>%
+         summarise(Revised_Source_Niche = "Total", count = n(), `Count of Source` = nrow(sample_names))
+
+#Bind totals to our amr_class_prev_by_source
+amr_class_prev_by_source <- bind_rows(amr_class_prev_by_source, total_amr_class_prev_by_source)
+ 
+# Calculate the percentage within each Revised_Source_Niche
+amr_class_prev_by_source <- amr_class_prev_by_source %>%
+        group_by(Revised_Source_Niche) %>%
+        mutate(percent = (count / `Count of Source`) * 100) %>%
+        ungroup()
+
+#Generate figure 2
+Figure_2A <- amr_class_prev_by_source %>%
+
+        # Create the ggplot
+        ggplot(aes(x = Reported_Class, y = percent, fill = Revised_Source_Niche)) +
+        geom_col(position = "dodge") +
+        labs(
+                x = "AMR Class",
+                y = "Percentage (%)",
+                fill = "Source Niche"
+        ) +
+        scale_y_continuous(labels = percent_format(scale = 1)) +
+        theme_minimal() +
+        theme(
+                axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)
+        ) +
+        scale_fill_manual(values = source_cols_w_total)
+
+# Save to file
+ggsave("figures/Figure_2A.pdf", Figure_2A, width = 8.27, height = 11.69/3, dpi = 300, device='pdf')
+
+Figure_2A
+
+```
+
+# Sourcewise AMR Prevalence
+
+```{r}
+
+source_wise_class_wise_AMR <- amrfinder_class_wise %>%
+        full_join(sample_names, by = 'name') %>%
+        complete(name, `Element type`, `Element subtype`, Reported_Class, fill = list(Present = 0)) %>%
+        filter(paste(`Element type`, `Element subtype`, Reported_Class) %in% paste(amrfinder_class_wise$`Element type`, amrfinder_class_wise$`Element subtype`, amrfinder_class_wise$Reported_Class)) %>%
+        left_join(name_source)
+
+source_wise_class_wise_AMR
+
+
+# Focus on one antibiotic class of interest
+class_of_interest <- "MACROLIDE"
+subset_df <- subset(source_wise_class_wise_AMR, Reported_Class == class_of_interest)
+
+# Create a contingency table: rows = source, columns = presence
+cont_table <- table(subset_df$Revised_Source_Niche, subset_df$Present)
+
+
+# Check expected counts using Chi-square test's expected values
+chi_test_prep <- suppressWarnings(chisq.test(cont_table, correct = FALSE)) # to get expected counts
+expected_counts <- chi_test_prep$expected
+
+# Display the contingency and expected counts
+print(cont_table)
+print(expected_counts)
+
+# Check whether all expected counts are >= 5
+if (all(expected_counts >= 5)) {
+  # Assumptions for Chi-square test are reasonably met
+  chi_test <- chisq.test(cont_table)
+  print("Using Chi-square test as all expected counts are >= 5:")
+  print(chi_test)
+  
+  # Create a contingency table for presence=1
+  presence_table <- table(subset_df$Revised_Source_Niche, subset_df$Present)
+  # Extract counts for presence=1
+  counts_present <- presence_table[, "1"]
+  # Extract total counts per source
+  total_counts <- rowSums(presence_table)
+  # Perform pairwise proportion tests
+  pairwise_tests <- pairwise.prop.test(counts_present, total_counts, 
+
+  p.adjust.method = "bonferroni")
+  # View results
+  print(pairwise_tests)
+  
+} else {
+  # Some expected counts are low, use Fisher's exact test
+  fisher_test <- fisher.test(cont_table)
+  print("Using Fisher's exact test due to low expected counts:")
+  print(fisher_test)
+}
+
+
+
+
+```
+
+
+
+# Stress - Figure 2B
+
+```{r}
+# Compute the number of genomes from a given source which carry 1 or more genes from a given class of antibiotic
+stress_class_prev_by_source <- amrfinder_class_wise %>%
+        # Filter for the desired Element type                        
+        filter(`Element type` == "STRESS") %>%
+
+        # Join with 'name_source_phylo' on 'name'
+        left_join(name_source_phylo, by = 'name') %>%
+        
+        # Group by Revised_Source_Niche and Reported_Class, then count occurrences
+        select(name, Revised_Source_Niche, `Count of Source`, Reported_Class) %>%
+                
+        # Group by Revised_Source_Niche and Reported_Class, then count occurrences
+        group_by(Revised_Source_Niche, Reported_Class) %>%
+        summarise(count = n(), .groups = 'drop') %>%
+        
+        # Ensure all combinations of Revised_Source_Niche and Reported_Class are present
+        complete(Revised_Source_Niche, Reported_Class, fill = list(count = 0)) %>%
+
+        # Join with 'name_source_phylo' on 'name'
+        left_join(source_counts_df, by = 'Revised_Source_Niche', relationship = 'many-to-many')
+
+# Generate totals across all sources
+ total_stress_class_prev_by_source <- amrfinder_class_wise %>%
+          # Filter for the desired Element type                        
+         filter(`Element type` == "STRESS") %>%
+         group_by(Reported_Class) %>%
+         summarise(Revised_Source_Niche = "Total", count = n(), `Count of Source` = nrow(sample_names))
+
+#Bind totals to our stress_class_prev_by_source
+stress_class_prev_by_source <- bind_rows(stress_class_prev_by_source, total_stress_class_prev_by_source)
+ 
+# Calculate the percentage within each Revised_Source_Niche
+stress_class_prev_by_source <- stress_class_prev_by_source %>%
+        group_by(Revised_Source_Niche) %>%
+        mutate(percent = (count / `Count of Source`) * 100) %>%
+        ungroup() %>%
+        # Add in our source counts again
+        mutate(`Count of Source` = replace_na(max(`Count of Source`, na.rm = TRUE), 0)) %>%
+        # Add in our source counts again
+        mutate(percent = replace_na(percent, 0))
+
+#Generate Figure 2B
+Figure_2B <- stress_class_prev_by_source %>%
+        
+        # Reorder fill order
+        mutate(Revised_Source_Niche = factor(Revised_Source_Niche, levels = c(unique(Revised_Source_Niche)))) %>%
+
+        # Create the ggplot
+        ggplot(aes(x = Reported_Class, y = percent, fill = Revised_Source_Niche)) +
+        geom_col(position = "dodge") +
+        labs(
+                x = "Stress Gene Class",
+                y = "Percentage (%)",
+                fill = "Source Niche"
+        ) +
+        scale_y_continuous(labels = percent_format(scale = 1), limits = c(0, 100)) +
+        theme_minimal() +
+        theme(
+                axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)
+        ) +
+        scale_fill_manual(values = source_cols_w_total)
+
+# Save to file
+ggsave("figures/Figure_2B.pdf", Figure_2B, width = 8.27, height = 11.69/3, dpi = 300, device='pdf')
+
+Figure_2B
+
+```
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(rstatix)
+
+# Prepare the data: Count of Count_of_stress_elements elements per genome and source niche
+genome_by_stress_gene_count_and_source <- amrfinder %>%
+        # Filter for the desired Element type                        
+        filter(`Element type` == "STRESS") %>%
+        # Join with metadata
+        left_join(small_meta, by = 'name') %>%
+        # Rename our gene column
+        rename("GENE" =`Gene symbol`) %>%
+        # Convert Revised_Source_Niche to a character
+        mutate(Revised_Source_Niche = as.character(Revised_Source_Niche)) %>%
+        # Select relevant columns
+        select(name, GENE, Revised_Source_Niche) %>%
+        # Group by genome name and source niche
+        group_by(name, Revised_Source_Niche) %>%
+        # Count the number of stress elements per group
+        summarise(Count_of_stress_elements = n(), .groups = 'drop') %>%
+        ungroup() %>%
+        full_join(name_source) %>%
+        mutate(Count_of_stress_elements = replace_na(Count_of_stress_elements, 0))
+
+# Check normality using Shapiro-Wilk test
+normality_checks <- genome_by_stress_gene_count_and_source %>%
+        group_by(Revised_Source_Niche) %>%
+        shapiro_test(Count_of_stress_elements)
+
+print("Shapiro-Wilk Normality Test Results:")
+print(normality_checks)
+
+# Check homogeneity of variances using Levene's test
+variance_check <- genome_by_stress_gene_count_and_source %>%
+        levene_test(Count_of_stress_elements ~ Revised_Source_Niche)
+
+print("Levene's Test for Homogeneity of Variances:")
+print(variance_check)
+
+```
+
+
+```{r}
+
+overall_median <- genome_by_stress_gene_count_and_source %>% pull(Count_of_stress_elements) %>% median()
+overall_mean <- genome_by_stress_gene_count_and_source %>% pull(Count_of_stress_elements) %>% mean()
+
+
+# Perform tests and store p-values
+test_results <- genome_by_stress_gene_count_and_source %>%
+  group_by(Revised_Source_Niche) %>%
+  summarize(
+          
+    minimum = min(Count_of_stress_elements),
+    median = median(Count_of_stress_elements),
+    mean = mean(Count_of_stress_elements),
+    max = max(Count_of_stress_elements),
+    iqr = IQR(Count_of_stress_elements),
+    p_value = wilcox.test(Count_of_stress_elements, mu = overall_median, alternative = "two.sided")$p.value
+  ) 
+    
+
+# Adjust p-values using Bonferroni correction
+test_results <- test_results %>%
+  mutate(`p.adj` = p.adjust(p_value, method = "bonferroni")) %>%
+        add_significance(p.col = "p.adj") %>%
+        mutate(string_for_paper = paste0(
+                "(min: ", minimum, "; ",
+                "median: ", median, "; ",
+                "mean: ", mean, "; ",
+                "max: ", max, "; ",
+                "p-value: ", `p.adj`, ")"))
+
+print(test_results)
+```
+
+
+## Metal resistance only
+```{r}
+
+# Prepare the data: Count of Count_of_metal_elements elements per genome and source niche
+genome_by_metal_gene_count_and_source <- amrfinder %>%
+        # Filter for the desired Element type                        
+        filter(`Element subtype` == "METAL") %>%
+        # Join with metadata
+        left_join(small_meta, by = 'name') %>%
+        # Rename our gene column
+        rename("GENE" =`Gene symbol`) %>%
+        # Convert Revised_Source_Niche to a character
+        mutate(Revised_Source_Niche = as.character(Revised_Source_Niche)) %>%
+        # Select relevant columns
+        select(name, GENE, Revised_Source_Niche) %>%
+        # Group by genome name and source niche
+        group_by(name, Revised_Source_Niche) %>%
+        # Count the number of metal elements per group
+        summarise(Count_of_metal_elements = n(), .groups = 'drop') %>%
+        ungroup() %>%
+        full_join(name_source) %>%
+        mutate(Count_of_metal_elements = replace_na(Count_of_metal_elements, 0))
+
+overall_median <- genome_by_metal_gene_count_and_source %>% pull(Count_of_metal_elements) %>% median()
+overall_mean <- genome_by_metal_gene_count_and_source %>% pull(Count_of_metal_elements) %>% mean()
+
+
+# Perform tests and store p-values
+test_results <- genome_by_metal_gene_count_and_source %>%
+  group_by(Revised_Source_Niche) %>%
+  summarize(
+          
+    minimum = min(Count_of_metal_elements),
+    median = median(Count_of_metal_elements),
+    mean = mean(Count_of_metal_elements),
+    max = max(Count_of_metal_elements),
+    iqr = IQR(Count_of_metal_elements),
+    p_value = wilcox.test(Count_of_metal_elements, mu = overall_median, alternative = "two.sided")$p.value
+  ) 
+    
+
+# Adjust p-values using Bonferroni correction
+test_results <- test_results %>%
+  mutate(`p.adj` = p.adjust(p_value, method = "bonferroni")) %>%
+        add_significance(p.col = "p.adj") %>%
+        mutate(string_for_paper = paste0(
+                "(min: ", minimum, "; ",
+                "median: ", median, "; ",
+                "mean: ", mean, "; ",
+                "max: ", max, "; ",
+                "p-value: ", `p.adj`, ")"))
+
+print(test_results)
+```
+
+
+```{r}
+Supp_Fig_1 <- amrfinder %>%
+    # Filter for the desired Element type                        
+    filter(`Element type` == "STRESS") %>%
+    # Join with metadata
+    left_join(small_meta, by = 'name') %>%
+    # Rename our gene column
+    rename("GENE" =`Gene symbol`) %>%
+        mutate(GENE = paste0(GENE, " _ ", Reported_Class)) %>%
+    # Convert Revised_Source_Niche to a character
+    mutate(Revised_Source_Niche = as.character(Revised_Source_Niche)) %>% select(name, GENE, Revised_Source_Niche) %>% mutate(Present = 1) %>% left_join(small_meta) %>% select(name, GENE, Present, Revised_Source_Niche, `Count of Source`) %>% group_by(Revised_Source_Niche, `Count of Source`, GENE) %>% tally() %>% mutate(perc = n/`Count of Source`) %>% ungroup() %>% select(Revised_Source_Niche, GENE, perc) %>% pivot_wider(values_from = 'perc', names_from = 'GENE', values_fill = 0) %>% column_to_rownames('Revised_Source_Niche') %>% t() %>% pheatmap(display_numbers = T, color = colorRampPalette(c("white", "red"))(100), fontsize = 8, fontsize_number = 8, fontsize_row = 8, fontsize_col = 8, cluster_rows = T, cluster_cols = T, show_colnames = T, show_rownames = T, main = "Stress Genes by Source Niche")
+
+```
+
+```{r}
+
+```
+
+
+```{r}
+# Read in our genotype data
+genotype <- read_delim("analysis/genotyping_Nov_2024/genotype.txt", 
+    delim = "\t", escape_double = FALSE, 
+    trim_ws = TRUE)
+
+# Remove fasta from end of name
+genotype <- genotype %>% mutate(name = str_replace(name, '.fasta', ''))
+
+# Remove genomes not present in sample names
+genotype <- genotype %>% filter(name %in% sample_names$name)
+
+# Remove genomes which dont meet our thresholds
+genotype <- genotype %>% filter(`%COVERAGE` >= coverage_threshold & `%IDENTITY` >= identity_threshold)
+
+# Add a column for present
+genotype <- genotype %>% mutate(Present = 1)
+```
+
+## IS elements - Figure 2C
+
+```{r}
+
+# Plot our IS data
+IS_data <- genotype %>%
+        # Filter for the desired Element type
+        filter(`DATABASE` == "IS") %>%
+        # Split out the IS group and family
+        separate(GENE, c("IS", "IS_family", "IS_group"), sep = "_", remove = FALSE) %>%
+        # Join with 'name_source_phylo' on 'name'
+        left_join(name_source_phylo, by = 'name') %>%
+        
+        # Group by Revised_Source_Niche and Reported_Class, then count occurrences
+        select(name, Revised_Source_Niche, IS_family, `Count of Source`) %>%
+        
+        unique() %>%
+        
+        # Group by Revised_Source_Niche and Reported_Class, then count occurrences
+        group_by(Revised_Source_Niche, IS_family, `Count of Source`) %>%
+        summarise(count = n(), .groups = 'drop') %>%
+        
+        # Ensure all combinations of Revised_Source_Niche and Reported_Class are present
+        complete(Revised_Source_Niche, IS_family, fill = list(count = 0)) %>%
+        
+        # Ungroup our data
+        ungroup()
+        
+# Generate totals across all sources
+ total_IS_data <- IS_data %>%
+         group_by(IS_family) %>%
+         summarise(Revised_Source_Niche = "Total", count = sum(count), `Count of Source` = nrow(sample_names))
+
+#Bind totals to our stress_class_prev_by_source
+IS_data_by_source <- bind_rows(IS_data, total_IS_data)
+ 
+# Calculate the percentage within each Revised_Source_Niche
+IS_data_by_source <- IS_data_by_source %>%
+        group_by(Revised_Source_Niche) %>%
+        mutate(percent = (count / `Count of Source`) * 100) %>%
+        ungroup() %>%
+        # Add in our source counts again
+        mutate(`Count of Source` = replace_na(max(`Count of Source`, na.rm = TRUE), 0)) %>%
+        # Add in our source counts again
+        mutate(percent = replace_na(percent, 0))
+
+#Generate Figure 2C
+Figure_2C <- IS_data_by_source %>%
+        # Reorder fill order
+        mutate(Revised_Source_Niche = factor(Revised_Source_Niche, levels = c(unique(Revised_Source_Niche)))) %>%
+        # Create the ggplot
+        ggplot(aes(x = IS_family, y = percent, fill = Revised_Source_Niche)) +
+        geom_col(position = "dodge") +
+        labs(
+                x = "IS Family",
+                y = "Percentage (%)",
+                fill = "Source Niche"
+        ) +
+        scale_y_continuous(labels = percent_format(scale = 1)) +
+        theme_minimal() +
+        theme(
+                axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)
+        ) +
+        scale_fill_manual(values = source_cols_w_total)
+
+# Save to file
+ggsave("figures/Figure_2C.pdf", Figure_2C, width = 8.27, height = 11.69/3, dpi = 300, device='pdf')
+
+Figure_2C
+
+```
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(rstatix)
+
+# Prepare the data: Count of IS elements per genome and source niche
+genome_by_IS_count_and_source <- genotype %>%
+        # Filter for the desired Element type
+        filter(`DATABASE` == "IS") %>%
+        # Join with metadata
+        left_join(small_meta, by = 'name') %>%
+        # Convert Revised_Source_Niche to a character
+        mutate(Revised_Source_Niche = as.character(Revised_Source_Niche)) %>%
+        # Select relevant columns
+        select(name, GENE, Revised_Source_Niche) %>%
+        # Group by genome name and source niche
+        group_by(name, Revised_Source_Niche) %>%
+        # Count the number of IS elements per group
+        summarise(Count_of_IS_elements = n(), .groups = 'drop') %>%
+        ungroup()
+
+# Check normality using Shapiro-Wilk test
+normality_checks <- genome_by_IS_count_and_source %>%
+        group_by(Revised_Source_Niche) %>%
+        shapiro_test(Count_of_IS_elements)
+
+print("Shapiro-Wilk Normality Test Results:")
+print(normality_checks)
+
+# Check homogeneity of variances using Levene's test
+variance_check <- genome_by_IS_count_and_source %>%
+        levene_test(Count_of_IS_elements ~ Revised_Source_Niche)
+
+print("Levene's Test for Homogeneity of Variances:")
+print(variance_check)
+
+# These tests demonstrated homogeneity of variance = FALSE and normality = FALSE
+# Therefore we use non-parametric tests
+
+# Perform Pairwise Wilcoxon Tests (Non-Parametric)
+# Ensure that there are at least two groups to compare
+if (length(unique(genome_by_IS_count_and_source$Revised_Source_Niche)) > 1) {
+        pairwise_results <- genome_by_IS_count_and_source %>%
+                # Conduct pairwise Wilcoxon tests on Count_of_IS_elements across Revised_Source_Niche groups
+                pairwise_wilcox_test(
+                        formula = Count_of_IS_elements ~ Revised_Source_Niche,
+                        data = .,
+                        paired = FALSE,
+                        p.adjust.method = "bonferroni"
+                ) %>%
+                # Filter for significant results
+                filter(p.adj < 0.05) %>%
+                # Select relevant columns for reporting
+                select(group1, group2, p.adj) %>%
+                # Arrange by adjusted p-value ascending
+                arrange(p.adj)
+        
+        # Display the significant pairwise comparisons
+        print("Significant Pairwise Wilcoxon Test Results:")
+        print(pairwise_results)
+        
+} else {
+        message("Not enough groups for pairwise Wilcoxon tests.")
+}
+
+# Summary Statistics: Median and Interquartile Range
+summary_stats <- genome_by_IS_count_and_source %>%
+        group_by(Revised_Source_Niche) %>%
+        summarise(
+                min_IS = min(Count_of_IS_elements, na.rm = TRUE),
+                mean_IS = mean(Count_of_IS_elements, na.rm = TRUE),
+                median_IS = median(Count_of_IS_elements, na.rm = TRUE),
+                max_IS = max(Count_of_IS_elements, na.rm = TRUE),
+                IQR_IS = IQR(Count_of_IS_elements, na.rm = TRUE),
+                n = n()
+        )
+
+# Display summary statistics
+print("Summary Statistics by Source Niche:")
+print(summary_stats)
+
+# Make a boxplot of IS element counts by source niche using ggpubr
+p <- genome_by_IS_count_and_source %>%
+        ggboxplot(
+                x = "Revised_Source_Niche",
+                y = "Count_of_IS_elements",
+                color = "Revised_Source_Niche",
+                palette = source_cols,
+                add = "jitter",
+                ylab = "Count of IS Elements",
+                xlab = "Source Niche",
+                ggtheme = theme_minimal()
+        ) #+ stat_compare_means(method = "wilcox.test")
+
+my_comparisons <- combn(unique(genome_by_IS_count_and_source$Revised_Source_Niche), 2, simplify = FALSE)
+
+p + stat_compare_means(aes(group=Revised_Source_Niche), label = "p.signif", method="wilcox.test", hide.ns=T, paired=F, comparisons = my_comparisons)
+
+mean <- mean(genome_by_IS_count_and_source$Count_of_IS_elements, na.rm = TRUE)
+
+# Perform one-sample Wilcoxon tests
+one_sample_results <- genome_by_IS_count_and_source %>%
+    group_by(Revised_Source_Niche) %>%
+    wilcox_test(Count_of_IS_elements ~ 1, 
+                mu = mean, 
+                alternative = "two.sided") %>%
+    adjust_pvalue(method = "bonferroni") %>%  # Adjust p-values for multiple comparisons
+    add_significance(p.col = "p.adj") %>%            # Add significance labels
+    select(Revised_Source_Niche, statistic, p.adj, p.adj.signif)
+
+# Display the results
+print("One-Sample Wilcoxon Test Results:")
+print(one_sample_results)
+
+```
+
+```{r}
+
+
+
+overall_median <- genome_by_IS_count_and_source %>% pull(Count_of_IS_elements) %>% median()
+overall_mean <- genome_by_IS_count_and_source %>% pull(Count_of_IS_elements) %>% mean()
+
+# Perform tests and store p-values
+test_results <- genome_by_IS_count_and_source %>%
+  group_by(Revised_Source_Niche) %>%
+  summarize(
+          
+    minimum = min(Count_of_IS_elements),
+    median = median(Count_of_IS_elements),
+    mean = mean(Count_of_IS_elements),
+    max = max(Count_of_IS_elements),
+    p_value = wilcox.test(Count_of_IS_elements, mu = overall_median, alternative = "two.sided")$p.value
+  ) 
+    
+
+# Adjust p-values using Bonferroni correction
+test_results <- test_results %>%
+  mutate(`p.adj` = p.adjust(p_value, method = "bonferroni")) %>%
+        add_significance(p.col = "p.adj")
+
+print(test_results)
+```
+
+```{r}
+```
+
+```{r}
+```
+
+
+```{r}
+
+
+genewise_amrfinder <- amrfinder %>%
+        #Join to our metadata
+        full_join(small_meta, by = 'name') %>%
+        #Filter to only include AMR elements
+        filter(`Element type` == "AMR") %>%
+        # Group and tally
+        group_by(Revised_Source_Niche, Reported_Class, `Gene symbol`, `Count of Source`) %>%
+        tally(name = "count") %>%
+        # Remove grouping
+        ungroup() %>% 
+        # Ensure all combinations of Revised_Source_Niche and Reported_Class are present
+        complete(Revised_Source_Niche, Reported_Class, `Gene symbol`, fill = list(count = 0)) %>%
+        # Fix NAs in the Count of Source column for combinations which were missing
+        group_by(Revised_Source_Niche) %>%
+        # Add in our source counts again
+        mutate(`Count of Source` = replace_na(max(`Count of Source`, na.rm = TRUE), 0)) %>%
+        #Remove grouping
+        ungroup()
+
+# Generate totals across all sources
+ total_amr_genewise_prev_by_source <- genewise_amrfinder %>%
+         group_by(Reported_Class, `Gene symbol`) %>%
+         reframe(Revised_Source_Niche = "Total", Reported_Class = Reported_Class,  `Gene symbol` = `Gene symbol`, `Count of Source` = nrow(sample_names), count = sum(count)) %>%
+         ungroup() %>%
+         select(all_of(colnames(genewise_amrfinder))) %>%
+         unique()
+
+genewise_amrfinder %>%
+        # Bind in totals
+        bind_rows(total_amr_genewise_prev_by_source) %>%
+        # Generate a column to filter by
+        mutate(filtering_column = paste(Reported_Class, `Gene symbol`, sep = "_")) %>%
+        # Filter out any weird groupings that incorrectly link resistance classes with genes
+        filter(filtering_column %in% paste(amrfinder$Reported_Class, amrfinder$`Gene symbol`, sep = "_")) %>%
+        # Remove that temporary column
+        select(-filtering_column) %>%
+        # Add a percent column
+        mutate(percent = scales::percent(count / `Count of Source`, accuracy = 0.01)) %>%
+        group_by(Revised_Source_Niche) %>%
+        # Make cell contents for our table by combining different columns
+        mutate(cell_contents = paste0(count,"/",`Count of Source`," (",percent,")")) %>% 
+        # Select the columns we want to pivot
+        select(Reported_Class, `Gene symbol`, Revised_Source_Niche, cell_contents) %>%
+        # Pivot the table wide
+        pivot_wider(names_from = `Revised_Source_Niche`, values_from = cell_contents) 
+        
+        
+```
+
+```{r}
+# Table for rare genes
+
+genewise_amrfinder %>%
+    # Bind in totals
+    bind_rows(total_amr_genewise_prev_by_source) %>%
+    # Generate a column to filter by
+    mutate(filtering_column = paste(Reported_Class, `Gene symbol`, sep = "_")) %>%
+    # Filter out any weird groupings that incorrectly link resistance classes with genes
+    filter(filtering_column %in% paste(amrfinder$Reported_Class, amrfinder$`Gene symbol`, sep = "_")) %>%
+    # Remove that temporary column
+    select(-filtering_column) %>%
+    # Add a percent column
+    mutate(percent = count / `Count of Source`, accuracy = 0.01) %>%
+        filter(Revised_Source_Niche == "Total") %>%
+        ungroup() %>%
+        #Categorise rows into rare and common based on the percent of samples they are in
+        mutate(Rarity = case_when(percent < 0.20 ~ "Rare",
+                                percent >= 0.20 & percent < 0.40~ "Uncommon",
+                                percent >= 0.40 & percent < 0.60~ "Common",
+                                percent >= 0.60 & percent < 0.80~ "Freqeunt",
+                                percent >= 0.80 ~ "Ubiquitous"
+                                )) %>%
+        select(Reported_Class, `Gene symbol`, Rarity) %>%
+        group_by(Reported_Class, Rarity) %>%
+        summarise(Genes = paste0(`Gene symbol`, collapse = ", ")) %>%
+        mutate(`Count of resistance loci` = str_count(Genes, ",") + 1)
+```
+
+## Gene-wise AMR - Figure 3
+
+```{r}
+
+reported_classes <- genewise_amrfinder %>%
+        ungroup() %>%
+        # Combine point and non-point categories by class, denoting SNPs with a *
+        mutate(`Gene symbol` = if_else(grepl("POINT", Reported_Class), paste0("*", `Gene symbol`), `Gene symbol`)) %>%
+        mutate(Reported_Class = if_else(grepl("POINT", Reported_Class), str_replace(Reported_Class, " POINT", ""), Reported_Class)) %>%
+        select(Reported_Class) %>% unique() %>% arrange(Reported_Class)
+
+first_AMR_plots_group <- reported_classes %>% head(8)
+
+second_AMR_plots_group <- reported_classes %>% filter(Reported_Class %nin% first_AMR_plots_group$Reported_Class) %>% head(8)
+
+third_AMR_plots_group <- reported_classes %>% filter(Reported_Class %nin% c(first_AMR_plots_group$Reported_Class, second_AMR_plots_group$Reported_Class)) %>% head(8)
+        
+
+Figure_3A <- genewise_amrfinder %>%
+         # Generate a column to filter by
+    mutate(filtering_column = paste(Reported_Class, `Gene symbol`, sep = "_")) %>%
+    # Filter out any weird groupings that incorrectly link resistance classes with genes
+    filter(filtering_column %in% paste(amrfinder$Reported_Class, amrfinder$`Gene symbol`, sep = "_")) %>%
+    # Remove that temporary column
+    select(-filtering_column) %>%
+        # Merge points mutations back in
+        mutate(`Gene symbol` = if_else(grepl("POINT", Reported_Class), paste0(`Gene symbol`,"*)"), `Gene symbol`)) %>%
+        mutate(Reported_Class = if_else(grepl("POINT", Reported_Class), str_replace(Reported_Class, " POINT", ""), Reported_Class)) %>%
+        # Filter to subset for this plot
+        filter(Reported_Class %in% first_AMR_plots_group$Reported_Class) %>%
+    # Add a percent column
+    mutate(percent = count / `Count of Source`, accuracy = 0.01) %>%
+        group_by(Reported_Class, `Gene symbol`) %>%
+        mutate(total_gene_count = sum(count)) %>%
+        ungroup() %>%
+    mutate(`Gene symbol` = paste0(`Gene symbol`, " n=",total_gene_count)) %>%
+        ungroup() %>%
+        #Categorise rows into rare and common based on the percent of samples they are in
+        mutate(Rarity = case_when(percent < 0.20 ~ "Rare",
+                                percent >= 0.20 & percent < 0.40~ "Uncommon",
+                                percent >= 0.40 & percent < 0.60~ "Common",
+                                percent >= 0.60 & percent < 0.80~ "Freqeunt",
+                                percent >= 0.80 ~ "Ubiquitous"
+                                )) %>%
+        # Make a barplot of the number of resistance loci in each rarity category
+        ggplot(aes(x = `Gene symbol`, y = count, fill = Revised_Source_Niche)) +
+        # Facet wrap
+        facet_wrap(~Reported_Class, scales = "free_x") +
+        geom_col() +
+        labs(
+                x = "Resistance locus",
+                y = "Count of resistance loci"
+        ) +
+        theme_minimal() +
+        theme(legend.position = "none",
+              axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 6)
+        ) + scale_fill_manual(values = source_cols) +
+        scale_x_discrete(expand = c(0, 0)) +
+        scale_y_continuous(limits = c(0, nrow(small_meta)), breaks = seq(0, nrow(small_meta), 1000))
+        
+
+# Save to file
+ggsave("figures/Figure_3A.pdf", Figure_3A, width = 11.69, height = 8.27, dpi = 300, device='pdf')
+
+Figure_3B <- genewise_amrfinder %>%
+    # Generate a column to filter by
+    mutate(filtering_column = paste(Reported_Class, `Gene symbol`, sep = "_")) %>%
+    # Filter out any weird groupings that incorrectly link resistance classes with genes
+    filter(filtering_column %in% paste(amrfinder$Reported_Class, amrfinder$`Gene symbol`, sep = "_")) %>%
+    # Remove that temporary column
+    select(-filtering_column) %>%
+        # Merge points mutations back in
+        mutate(`Gene symbol` = if_else(grepl("POINT", Reported_Class), paste0(`Gene symbol`,"*)"), `Gene symbol`)) %>%
+        mutate(Reported_Class = if_else(grepl("POINT", Reported_Class), str_replace(Reported_Class, " POINT", ""), Reported_Class)) %>%
+        # Filter to subset for this plot
+        filter(Reported_Class %in% second_AMR_plots_group$Reported_Class) %>%
+    # Add a percent column
+    mutate(percent = count / `Count of Source`, accuracy = 0.01) %>%
+        group_by(Reported_Class, `Gene symbol`) %>%
+        mutate(total_gene_count = sum(count)) %>%
+        ungroup() %>%
+    mutate(`Gene symbol` = paste0(`Gene symbol`, " n=",total_gene_count)) %>%
+        ungroup() %>%
+        #Categorise rows into rare and common based on the percent of samples they are in
+        mutate(Rarity = case_when(percent < 0.20 ~ "Rare",
+                                percent >= 0.20 & percent < 0.40~ "Uncommon",
+                                percent >= 0.40 & percent < 0.60~ "Common",
+                                percent >= 0.60 & percent < 0.80~ "Freqeunt",
+                                percent >= 0.80 ~ "Ubiquitous"
+                                )) %>%
+        # Make a barplot of the number of resistance loci in each rarity category
+        ggplot(aes(x = `Gene symbol`, y = count, fill = Revised_Source_Niche)) +
+        # Facet wrap
+        facet_wrap(~Reported_Class, scales = "free_x") +
+        geom_col() +
+        labs(
+                x = "Resistance locus",
+                y = "Count of resistance loci"
+        ) +
+        theme_minimal() +
+        theme(legend.position = "none",
+              axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 6)
+        ) + scale_fill_manual(values = source_cols) +
+        scale_x_discrete(expand = c(0, 0)) +
+        scale_y_continuous(limits = c(0, nrow(small_meta)), breaks = seq(0, nrow(small_meta), 1000))
+        
+
+
+# Save to file
+ggsave("figures/Figure_3B.pdf", Figure_3B, width = 11.69, height = 8.27, dpi = 300, device='pdf')
+
+Figure_3C <- genewise_amrfinder %>%
+         # Generate a column to filter by
+    mutate(filtering_column = paste(Reported_Class, `Gene symbol`, sep = "_")) %>%
+    # Filter out any weird groupings that incorrectly link resistance classes with genes
+    filter(filtering_column %in% paste(amrfinder$Reported_Class, amrfinder$`Gene symbol`, sep = "_")) %>%
+    # Remove that temporary column
+    select(-filtering_column) %>%
+        # Merge points mutations back in
+        mutate(`Gene symbol` = if_else(grepl("POINT", Reported_Class), paste0(`Gene symbol`,"*)"), `Gene symbol`)) %>%
+        mutate(Reported_Class = if_else(grepl("POINT", Reported_Class), str_replace(Reported_Class, " POINT", ""), Reported_Class)) %>%
+        # Filter to subset for this plot
+        filter(Reported_Class %in% third_AMR_plots_group$Reported_Class) %>%
+    # Add a percent column
+    mutate(percent = count / `Count of Source`, accuracy = 0.01) %>%
+        group_by(Reported_Class, `Gene symbol`) %>%
+        mutate(total_gene_count = sum(count)) %>%
+        ungroup() %>%
+    mutate(`Gene symbol` = paste0(`Gene symbol`, " n=",total_gene_count)) %>%
+        ungroup() %>%
+        #Categorise rows into rare and common based on the percent of samples they are in
+        mutate(Rarity = case_when(percent < 0.20 ~ "Rare",
+                                percent >= 0.20 & percent < 0.40~ "Uncommon",
+                                percent >= 0.40 & percent < 0.60~ "Common",
+                                percent >= 0.60 & percent < 0.80~ "Freqeunt",
+                                percent >= 0.80 ~ "Ubiquitous"
+                                )) %>%
+        # Make a barplot of the number of resistance loci in each rarity category
+        ggplot(aes(x = `Gene symbol`, y = count, fill = Revised_Source_Niche)) +
+        # Facet wrap
+        facet_wrap(~Reported_Class, scales = "free_x") +
+        geom_col() +
+        labs(
+                x = "Resistance locus",
+                y = "Count of resistance loci"
+        ) +
+        theme_minimal() +
+        theme(legend.position = "none",
+              axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 6)
+        ) + scale_fill_manual(values = source_cols) +
+        scale_x_discrete(expand = c(0, 0)) +
+        scale_y_continuous(limits = c(0, nrow(small_meta)), breaks = seq(0, nrow(small_meta), 1000))
+        
+# Save to file
+ggsave("figures/Figure_3C.pdf", Figure_3C, width = 11.69, height = 8.27, dpi = 300, device='pdf')
+
+Figure_3A
+Figure_3B
+Figure_3C
+
+```
+
+
+## Virulence - Figure 4
+
+```{r}
+VFDB <- genotype %>%
+    # Filter for the desired Element type
+    filter(`DATABASE` == "VFDB_core")
+
+
+# Remove unwanted genes
+# VFDB <- VFDB %>%
+#         filter(!grepl("\\(ibeB\\)", PRODUCT)) %>% # Remove ibeB
+#         filter(!grepl("\\(ibeC\\)", PRODUCT)) %>% # Remove ibeC
+#         filter(!grepl("\\(aec17\\)", PRODUCT)) %>% # Remove aec20-29 
+#         filter(!grepl("\\(aec18\\)", PRODUCT)) %>% # Remove aec20-29 
+#         filter(!grepl("\\(aec19\\)", PRODUCT)) %>% # Remove aec20-29 
+#         filter(!grepl("\\(aec2[0-9]\\)", PRODUCT)) %>% # Remove aec20-29 
+#         filter(!grepl("\\(aec3[0-9]\\)", PRODUCT)) %>% # Remove aec20-29 
+
+if(length(unique(genotype$name)) < nrow(sample_names)){
+    # Raise an error if some genomes are missing from the VFDB data
+    stop("Some genomes are missing from the VFDB data.")
+
+}
+
+VFDB_plot_df <- VFDB %>%         
+    # Split out the VF metadata
+    separate(PRODUCT, c("GENE_LONG", "VF_name_and_VF_group", "origin_organism"), sep = "\\[", remove = FALSE) %>%
+    # Split out the VF metadata
+    separate(PRODUCT, c("PRODUCT", "VF Category"), sep = " - ", remove = FALSE) %>%
+    # Split out the gene name
+    mutate(`VF Category` = str_replace(`VF Category`, " \\(VFC.*", "")) %>%
+    mutate(GENE = str_replace(PRODUCT, "\\(gb[^)]+\\)", "")) %>%
+    mutate(GENE = str_replace(GENE, "VFG[0-9]+ \\(", "")) %>%
+    mutate(GENE = str_replace(GENE, "\\).*", "")) %>%
+        # Collapse things from the same operon
+    mutate(OPERON = str_replace(GENE, "^([A-z]+)([A-Z])$", "\\1")) %>%
+    mutate(LOCUS = str_replace(GENE, "^([A-z]+)([A-Z])$", "\\2")) %>%
+    dplyr::select(name, GENE, OPERON, LOCUS, `VF Category`) %>%
+        mutate(Present = 1) %>%
+        unique() %>%
+        arrange(OPERON, LOCUS) %>%
+        mutate(LOCUS = if_else(LOCUS == OPERON, "", LOCUS)) %>%
+        group_by(OPERON) %>%
+        mutate(GENES = paste0(OPERON ,paste0(unique(LOCUS), collapse = ""))) %>%
+        ungroup()
+
+virulence_df <- genotype %>% filter(DATABASE == "EC_custom") %>% bind_rows(VFDB_plot_df)
+
+virulence_df <- virulence_df %>% select(name, GENE, DATABASE, Present, `VF Category`, GENES, OPERON, LOCUS)
+
+virulence_df <- virulence_df %>%
+  mutate(`VF Category` = case_when(
+    GENE == "iss_type3~UTI89" ~ "Immune modulation",
+    GENE == "fecA_NC_000913.3" ~ "Nutritional/Metabolic factor",
+    GENE == "yeeT" ~ "Biofilm",
+    GENE == "ompT_chromosomal_O157-H7_NC_002695" ~ "Exoenzyme",
+    GENE == "malX" ~ "Adherence",
+    GENE == "traT" ~ "Immune modulation",
+    GENE == "cjrA_pUTI89_NC_007941" ~ "Nutritional/Metabolic factor",
+    GENE == "cjrB_pUTI89_NC_007941" ~ "Nutritional/Metabolic factor",
+    GENE == "cjrC_pUTI89_NC_007941" ~ "Nutritional/Metabolic factor",
+    GENE == "intI1" ~ "Others",
+    GENE == "pcoA" ~ "Others",
+    GENE == "silA" ~ "Others",
+    GENE == "cvaA" ~ "Exotoxin",
+    GENE == "eitD" ~ "Nutritional/Metabolic factor",
+    GENE == "eitC" ~ "Nutritional/Metabolic factor",
+    GENE == "eitB" ~ "Nutritional/Metabolic factor",
+    GENE == "eitA" ~ "Nutritional/Metabolic factor",
+    GENE == "gimB-marker" ~ "Regulation",
+    GENE == "cvi" ~ "Exotoxin",
+    GENE == "cvaC" ~ "Exotoxin",
+    GENE == "cvaB" ~ "Exotoxin",
+    GENE == "cmi~pAPEC-O1-ColBM" ~ "Exotoxin",
+    GENE == "cma~pAPEC-O1-ColBM" ~ "Exotoxin",
+    GENE == "cbi~pAPEC-O1-ColBM" ~ "Exotoxin",
+    GENE == "cba~pAPEC-O1-ColBM" ~ "Exotoxin",
+    GENE == "etsA" ~ "Effector delivery system",
+    GENE == "ompT_episomal" ~ "Exoenzyme",
+    GENE == "hylF" ~ "Exotoxin",
+    GENE == "tia" ~ "Invasion",
+    GENE == "merA" ~ "Others",
+    GENE == "rfc~O_antigen_polymerase" ~ "Others",
+    GENE == "bor~K12" ~ "Immune modulation",
+    GENE == "gafD" ~ "Adherence",
+    GENE == "terA" ~ "Others",
+    GENE == "intI2" ~ "Others",
+    GENE == "shiD" ~ "Others",
+    GENE == "iss_type2~ETEC-B7a" ~ "Immune modulation",
+    GENE == "subA" ~ "Exotoxin",
+    GENE == "subB" ~ "Exotoxin",
+    GENE == "bmaE" ~ "Adherence",
+    TRUE ~ `VF Category`  # Retain existing category if Gene doesn't match
+  ))
+
+custom_genes_non_vf <- c('intI1', 'pcoA', 'silA', 'terA', 'intI2', 'merA')
+
+virulence_df <- virulence_df %>% filter(GENE %nin% custom_genes_non_vf)
+
+virulence_df <- virulence_df %>% mutate(GENE = str_replace(GENE, "_NC_.*", ""))
+
+virulence_df_for_plot <- virulence_df %>%         
+    dplyr::select(name, GENE, OPERON, LOCUS, `VF Category`, Present) %>%
+        arrange(OPERON, LOCUS) %>%
+        mutate(LOCUS = if_else(LOCUS == OPERON, "", LOCUS)) %>%
+        group_by(OPERON) %>%
+        mutate(GENES = paste0(OPERON ,paste0(unique(LOCUS), collapse = "")))  %>%
+        mutate(GENES = if_else(is.na(GENES), GENE, GENES)) %>%
+        ungroup() %>%
+        left_join(small_meta, by = 'name') %>% unique()
+
+```
+
+
+```{r}
+# Generate our df on VFDB Categories
+virulence_df_for_plot %>%
+        select(name, Consensus_phylogroup, `VF Category`, GENES, Present) %>%
+        filter(Consensus_phylogroup %nin% unwanted_phylos) %>%
+        group_by(name, `VF Category`, Consensus_phylogroup) %>%
+        summarise(`Gene Count` = sum(Present), .groups = 'drop') %>%
+        # Ensure all combinations of Consensus_phylogroup and Reported_Class are present
+        complete(Consensus_phylogroup, `VF Category`, name, fill = list(count = 0)) %>%
+        # Replace NAs in the Gene count column with zeros
+        mutate(`Gene Count` = replace_na(`Gene Count`, 0)) %>%
+        # Remove incorrect combinations of names and phylogroups
+        filter(paste0(name, Consensus_phylogroup) %in% unique(paste0(virulence_df_for_plot$name, virulence_df_for_plot$Consensus_phylogroup))) %>%
+        # Make a boxplot with phylogroup on the x axis, faceted by VF Category
+        ggplot(aes(x = Consensus_phylogroup, y = `Gene Count`, fill = Consensus_phylogroup)) +
+        geom_boxplot() +
+        facet_wrap(~`VF Category`, scales = "free") +
+        theme_minimal() +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+        scale_fill_manual(values = clermont_cols) +
+        scale_y_continuous(limits = c(0, NA))
+```
+
+```{r}
+
+
+# Generate our df on VFDB Categories
+virulence_df_for_plot %>%
+        select(name, Revised_Source_Niche, `VF Category`, GENES, Present) %>%
+        group_by(name, `VF Category`, Revised_Source_Niche) %>%
+        summarise(`Gene Count` = sum(Present), .groups = 'drop') %>%
+        # Ensure all combinations of Revised_Source_Niche and Reported_Class are present
+        complete(Revised_Source_Niche, `VF Category`, name, fill = list(count = 0)) %>%
+        # Replace NAs in the Gene count column with zeros
+        mutate(`Gene Count` = replace_na(`Gene Count`, 0)) %>%
+        # Remove incorrect combinations of names and sources
+        filter(paste0(name, Revised_Source_Niche) %in% unique(paste0(virulence_df_for_plot$name, virulence_df_for_plot$Revised_Source_Niche))) %>%
+        # Make a boxplot with source niche on the x axis, faceted by VF Category
+        ggplot(aes(x = Revised_Source_Niche, y = `Gene Count`, fill = Revised_Source_Niche)) +
+        geom_boxplot() +
+        facet_wrap(~`VF Category`, scales = "free") +
+        theme_minimal() +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+        scale_fill_manual(values = source_cols) +
+        scale_y_continuous(limits = c(0, NA))
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(tidyHeatmap)
+library(stringr)
+library(rlang)  # For sym and !!
+
+# Define the function
+create_vfdb_heatmap <- function(vf_category,
+                                df = virulence_df_for_plot,
+                                sample_names,
+                                small_meta,
+                                unwanted_phylos,
+                                source_cols,
+                                clermont_cols,
+                                min_count = 10,
+                                core_threshold = 0.9) {
+        # Create a dynamic name for the gene carriage based on the category
+        category_name <- paste0(vf_category, " gene carriage")
+        
+        # Start the data pipeline
+        heatmap_df <- df %>%
+                # Filter for the specified VF Category
+                filter(`VF Category` == vf_category) %>%
+                
+                # Group and process unique entries
+                group_by(name, `VF Category`, GENE) %>%
+                distinct() %>%  # Use distinct() instead of unique()
+                add_count(name, `VF Category`, GENE, name = "count") %>%
+                ungroup() %>%
+                
+                # Select relevant columns and ensure uniqueness
+                select(name, GENE, Present) %>%
+                distinct() %>%
+                
+                # Pivot to wide format: each gene becomes a column
+                pivot_wider(
+                        names_from = GENE,
+                        values_from = Present,
+                        values_fill = list(Present = 0)
+                ) %>%
+                
+                # Optionally join with sample_names if needed
+                # right_join(sample_names, by = 'name') %>%
+                
+                # Convert 'name' to rownames
+                column_to_rownames("name") %>%
+                
+                # Replace NAs with zeros using across() for modern dplyr
+                mutate(across(everything(), ~ replace_na(.x, 0))) %>%
+                
+                # Select columns where the sum is greater than 10 or non-numeric
+                select_if(~ !is.numeric(.) ||
+                                  sum(.x) > min_count) %>%
+                
+                # Select columns where GENE are present in at least 90% of samples
+                # Alternatively user defines core threshold as something else
+                select_if(~ !is.numeric(.) ||
+                                  sum(.x) < core_threshold*nrow(sample_names)) %>%
+                
+                # Rename columns to include their column sum and total samples
+                setNames(paste0(names(.),
+                                " (n=",
+                                colSums(.),
+                                #"/",
+                                #nrow(sample_names),
+                                ")")) %>%
+                
+                # Convert rownames back to a column
+                rownames_to_column("name") %>%
+                
+                # Pivot back to long format
+                pivot_longer(cols = -name,
+                             names_to = "GENE",
+                             values_to = "Present") %>%
+                
+                # Join with metadata
+                inner_join(small_meta, by = 'name') %>%
+                distinct() %>%
+
+                # Filter out unwanted phylogroups
+                filter(!Consensus_phylogroup %in% unwanted_phylos) %>%
+                
+                # Ungroup
+                ungroup() %>%
+                
+                # Create a short source identifier
+                mutate(short_source = str_replace(Revised_Source_Niche, "^([A-Z]).*", "\\1")) %>%
+
+                # Dynamically rename 'GENE' and 'name' columns
+                rename(!!sym(category_name) := GENE,
+                       Genome = name) %>%
+                
+                # Arrange by phylogroup
+                arrange(Consensus_phylogroup)
+        
+        # Turn off grouping if only one group is present
+        if(length(unique(heatmap_df$Revised_Source_Niche)) > 1){
+                heatmap_df <- heatmap_df %>%
+                        # Group by short_source (if needed for further operations)
+                        group_by(short_source) 
+        }
+        
+        heatmap_plot <- heatmap_df %>%
+                
+                # Generate the heatmap
+                tidyHeatmap::heatmap(
+                        .column = !!sym(category_name),
+                        .row = Genome,
+                        .value = Present,
+                        use_raster = FALSE,
+                        palette_value = c("grey85", "blue", "red"),
+                        show_heatmap_legend = FALSE,
+                        
+                ) %>%
+                
+                # Add additional tiles
+                
+                annotation_tile(Revised_Source_Niche, palette = source_cols) %>%
+                annotation_tile(Consensus_phylogroup,
+                                palette = clermont_cols[1:8])
+        
+        # Return the heatmap object
+        # save_pdf(
+        #         heatmap_plot,
+        #         filename = paste0(
+        #                 "figures/",
+        #                 str_replace_all(vf_category, " |\\/", "_"),
+        #                 "_heatmap2.pdf"
+        #         ),
+        #         width = 8.27,
+        #         height = 11.69 / 3
+        # )
+        print(paste(vf_category, "complete"))
+}
+
+for (category in unique(virulence_df_for_plot$`VF Category`)) {
+        if (category == "Exotoxin") {
+                min_count = 2
+        } else {
+                min_count = 10
+        }
+        create_vfdb_heatmap(
+                vf_category = category,
+                df = virulence_df_for_plot,
+                sample_names = sample_names,
+                small_meta = small_meta,
+                unwanted_phylos = unwanted_phylos,
+                source_cols = source_cols,
+                clermont_cols = clermont_cols,
+                min_count = min_count
+        )
+}
+```
+
+# Compute count of ARG classes
+```{r}
+
+count_of_amr_classes <- amrfinder_class_wise %>% mutate(classwise_counting_col = Reported_Class) %>%
+    filter(`Element type` == "AMR") %>% 
+    mutate(classwise_counting_col = str_replace(Reported_Class, " POINT", "")) %>%
+    mutate(classwise_counting_col = if_else(classwise_counting_col %in% c("CEPHALOSPORIN", "BETA-LACTAM", "CARBAPENEM"), "BETA-LACTAM", classwise_counting_col)) %>%
+    mutate(classwise_counting_col = if_else(classwise_counting_col %in% c("FOSFOMYCIN", "FOSMIDOMYCIN"), "PHOSPHONIC ACIDS", classwise_counting_col)) %>%
+    filter(classwise_counting_col %nin% c("MULTIDRUG", "EFFLUX", "TRICLOSAN")) %>%
+    select(name, Present, classwise_counting_col) %>%
+    complete(name, classwise_counting_col, fill = list(Present = 0)) %>% full_join(sample_names) %>% mutate(Present = replace_na(Present, 0)) %>% unique() %>% group_by(name) %>% summarise(Count_of_AMR_classes = sum(Present))
+
+binary_per_AMR_class <- amrfinder_class_wise %>% mutate(classwise_counting_col = Reported_Class) %>%
+    filter(`Element type` == "AMR") %>% 
+    mutate(classwise_counting_col = str_replace(Reported_Class, " POINT", "")) %>%
+    mutate(classwise_counting_col = if_else(classwise_counting_col %in% c("CEPHALOSPORIN", "BETA-LACTAM", "CARBAPENEM"), "BETA-LACTAM", classwise_counting_col)) %>%
+    mutate(classwise_counting_col = if_else(classwise_counting_col %in% c("FOSFOMYCIN", "FOSMIDOMYCIN"), "PHOSPHONIC ACIDS", classwise_counting_col)) %>%
+    filter(classwise_counting_col %nin% c("MULTIDRUG", "EFFLUX", "TRICLOSAN")) %>%
+    select(name, Present, classwise_counting_col) %>%
+    complete(name, classwise_counting_col, fill = list(Present = 0)) %>% full_join(sample_names) %>% mutate(Present = replace_na(Present, 0)) %>% unique()
+
+list_CIA_res_genes <- amrfinder_class_wise %>% mutate(classwise_counting_col = Reported_Class) %>%
+    filter(`Element type` == "AMR") %>% 
+    mutate(classwise_counting_col = str_replace(Reported_Class, " POINT", "")) %>%
+    filter(classwise_counting_col %in% c("MACROLIDE", "QUINOLONE", "CEPHALOSPORIN")) %>%
+    select(name, Present, classwise_counting_col) %>%
+    complete(name, classwise_counting_col, fill = list(Present = 0)) %>% full_join(sample_names) %>% mutate(Present = replace_na(Present, 0)) %>% unique() %>% group_by(name) %>% summarise(Count_of_AMR_genes = sum(Present))
+        
+
+```
+
+## Upset
+
+```{r}
+
+hist(count_of_amr_classes$Count_of_AMR_classes)
+
+AMR_upset_df <- binary_per_AMR_class %>% group_by(name) %>% mutate(classwise_count = sum(Present)) %>% ungroup() %>% filter(classwise_count >= 10) %>% select(-classwise_count) %>% mutate(Present = as.logical(Present)) %>% pivot_wider(names_from = classwise_counting_col, values_from = Present) %>% column_to_rownames('name')
+
+classes <- colnames(AMR_upset_df)
+
+AMR_upset_df <- AMR_upset_df %>% rownames_to_column('name') %>% left_join(small_meta) %>% column_to_rownames('name') 
+
+
+phylogroups_in_upset <- AMR_upset_df %>% pull(Consensus_phylogroup) %>% unique()
+
+clermont_cols_upset <- clermont_cols[names(clermont_cols) %in% phylogroups_in_upset]
+
+AMR_upset_df <- AMR_upset_df %>% rename("Source" = Revised_Source_Niche, "Phylogroup" = Consensus_phylogroup)
+
+upset(
+        data = AMR_upset_df,
+        intersect = classes,
+        name = "Intersection of ARG classes",
+        height_ratio = 1,
+        width_ratio = 0.1,
+        base_annotations=list(
+        'Intersection size'=intersection_size(
+            counts=TRUE,
+            mapping=aes(fill=Phylogroup),
+            text_colors=c(
+                on_background='black', on_bar='black'
+            )
+        )+ scale_fill_manual(values=clermont_cols_upset
+        )
+    ),
+    annotations = list(
+        'Source Niche'=(
+            ggplot(mapping=aes(fill=Source))
+            + geom_bar(stat='count', position='fill')
+            + scale_y_continuous(labels=scales::percent_format())
+            + scale_fill_manual(values=source_cols)
+            +  labs(y= "Percentage from source")
+            )
+),
+        set_sizes=(
+                upset_set_size()
+                + theme(axis.text.x=element_text(angle=90)))
+)
+
+ARGs_of_interest <- c("aac(6')-Ib-cr",
+        "aac(6')-Ib-cr5",
+        "blaCTX-M",
+        "blaCTX-M-1",
+        "blaCTX-M-101",
+        "blaCTX-M-104",
+        "blaCTX-M-123",
+        "blaCTX-M-14",
+        "blaCTX-M-15",
+        "blaCTX-M-182",
+        "blaCTX-M-189",
+        "blaCTX-M-220",
+        "blaCTX-M-24",
+        "blaCTX-M-27",
+        "blaCTX-M-3",
+        "blaCTX-M-55",
+        "blaCTX-M-62",
+        "blaCTX-M-65",
+        "blaCTX-M-8",
+        "blaCTX-M-9",
+        "mcr-1.1",
+        "mph(A)",
+        "oqxA",
+        "oqxA2",
+        "oqxB",
+        "oqxB2",
+        "qnrA1",
+        "qnrA6",
+        "qnrB1",
+        "qnrB19",
+        "qnrB2",
+        "qnrB4",
+        "qnrB6",
+        "qnrB7",
+        "qnrD1",
+        "qnrS",
+        "qnrS1",
+        "qnrS13")
+
+names_with_genes_of_interest <- amrfinder %>% filter(`Gene symbol` %in% ARGs_of_interest) %>% pull(name)
+
+amr_heatmap_df <- amrfinder %>% filter(`Element type` == "AMR") %>% filter(name %in% names_with_genes_of_interest) %>% filter(name %in% rownames(AMR_upset_df)) %>% rename("GENE" = `Gene symbol`) %>% select(name, GENE, Present) %>% complete(name, GENE, fill = list(Present = 0)) %>% left_join(small_meta) %>% mutate(name_with_ST = paste0(name, " -- ST", ST_new, ":", Consensus_phylogroup)) %>% left_join(count_of_amr_classes) %>% left_join(binary_per_AMR_class)  %>% mutate(name_with_ST = as.factor(name_with_ST)) %>% rename('Genome' = name_with_ST, "Virulence Gene" = GENE, "Source" = Revised_Source_Niche) 
+
+amr_heatmap_df %>% group_by(Count_of_AMR_classes) %>% heatmap(.row = Genome, .column = `Virulence Gene`, .value = Present,
+                        palette_value = c("grey85", "blue", "red"), 
+        row_names_gp = gpar(fontsize = 7),
+        column_names_gp = gpar(fontsize = 5)) %>% annotation_tile(Source)
+
+```
+AMR Tree
+
+```{r}
+library(ggtree)
+library(ggtreeExtra)
+library(ggnewscale)
+
+XDR_tree <- read.tree("analysis/XDR_mashtree.dnd")
+
+XDR_tree <- midpoint_root(XDR_tree)
+
+XDR_meta <- small_meta %>% filter(name %in% XDR_tree$tip.label) %>% select(name, ST_new)
+
+amr_tree_df <- amr_heatmap_df %>% select(name, `Virulence Gene`, Present) %>% rename('Gene' = `Virulence Gene`)
+
+arg_to_reported_class <- amrfinder %>% select(`Gene symbol`, Reported_Class) %>% unique()
+
+amr_tree_df <- left_join(amr_tree_df, arg_to_reported_class, by = c("Gene" = "Gene symbol"))
+
+amr_tree_df <- amr_tree_df %>% arrange(Reported_Class)
+
+gene_order <- amr_tree_df$Gene %>% unique()
+
+amr_tree_df <- amr_tree_df %>% mutate(Gene = factor(Gene, levels = gene_order))
+
+#amr_tree_df <- amr_tree_df %>% mutate(Reported_Class = if_else(Present == 0, "NONE", Reported_Class))
+
+amr_df_names <- amr_tree_df %>% pull(Reported_Class) %>% unique()
+
+# https://sashamaps.net/docs/resources/20-colors/
+amr_df_cols <- 
+        c('#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe', '#008080', '#e6beff', '#9a6324', '#fffac8', '#800000', '#aaffc3', '#808000', '#ffd8b1', '#000075', 'grey80', 'grey60', 'grey40', 'grey20', 'grey0')
+
+names(amr_df_cols) <- amr_df_names
+
+XDR_tree_plot <- ggtree(XDR_tree) %<+% XDR_meta +
+        geom_tiplab(size = 2, align = T) +
+        geom_tiplab(aes(label = paste0("ST",ST_new)), align = T, linetype = NULL,
+                    size = 2, offset = 0.035) +
+        theme(legend.position = "none")
+
+XDR_tree_plot +
+        new_scale_fill() +
+        geom_fruit(data = small_meta,
+                   geom = geom_tile,
+                   mapping = aes(y = name,
+                                 fill = Consensus_phylogroup),
+                   pwidth = 0.01,
+                   offset = 2) +
+        scale_fill_manual(values = clermont_cols) +
+        new_scale_fill() +
+        geom_fruit(data = small_meta,
+                   geom = geom_tile,
+                   mapping = aes(y = name,
+                                 fill = Revised_Source_Niche),
+                   pwidth = 0.01,
+                   offset = 0.5) +
+        scale_fill_manual(values = source_cols) +
+        new_scale_fill() +
+        geom_fruit(data = amr_tree_df,
+                        geom = geom_tile,
+                        mapping = aes(y = name,
+                                      x = Gene,
+                                      fill = as.character(Present)
+                                      ),
+                        pwidth = 12,
+                        offset = 0.25,
+         axis.params=list(
+                         axis="x",
+                         text.angle = 90,
+                         text.size = 2,
+                         line.size = 0,
+                         vjust = 0,
+                         hjust = 1
+                     )) +
+        scale_fill_manual(values = c("0" = "grey80", "1" = "blue4")) +
+        ylim(-10, NA)
+
+
+
+
+```
+
+
+
+```{r}
+focused_VFs <- virulence_df_for_plot %>%
+        filter(
+                grepl('^stx|^tir|^eae|^espA|^escC', GENE) | #EHEC
+                        grepl('^cdtA|^bfpB|^east1', GENE) |         #EPEC
+                        grepl('^eltA|^eastIa|^etpB', GENE) | #ETEC
+                        grepl('^ipaA|^mxiD|^spa13|^iscA', GENE) | #EIEC
+                        grepl('^aafA|^aap|^pet', GENE) | #EAEC
+                        grepl('^draA', GENE) | #DAEC
+                        grepl('^papG|^sfaE|^iroN|^iucD|^fyuA|^senB', GENE) | #UPEC
+                        grepl('^ibeA|^kpsT|^neuC', GENE) #NMEC
+        )
+
+focused_VFs <- focused_VFs %>%
+        mutate(pathotype = NA) %>%
+        mutate(pathotype = if_else(grepl('^stx|^tir|^eae|^espA|^escC', GENE), "EHEC", pathotype)) %>%
+        mutate(pathotype = if_else(grepl('^cdtA|^bfpB|^east1', GENE), "EPEC", pathotype)) %>%
+        mutate(pathotype = if_else(grepl('^eltA|^eastIa|^etpB', GENE), "ETEC", pathotype)) %>%
+        mutate(pathotype = if_else(grepl('^ipaA|^mxi|^spa|^iscA', GENE), "EIEC", pathotype)) %>%
+        mutate(pathotype = if_else(grepl('^aafA|^aap|^pet', GENE), "EAEC", pathotype)) %>%
+        mutate(pathotype = if_else(grepl('^draA', GENE), "DAEC", pathotype)) %>%
+        mutate(pathotype = if_else(grepl('^papG|^sfaE|^iroN|^iucD|^fyuA|^senB', GENE), "UPEC", pathotype)) %>%
+        mutate(pathotype = if_else(grepl('^ibeA|^kpsT|^neuC', GENE), "NMEC", pathotype))
+
+potential_hybrids <-
+        focused_VFs %>%
+        select(name, pathotype) %>%
+        mutate(pathotype = str_replace(pathotype, "NMEC", "ExPEC")) %>%
+        mutate(pathotype = str_replace(pathotype, "UPEC", "ExPEC")) %>%
+        mutate(pathotype = str_replace(pathotype, "EHEC", "IPEC")) %>%
+        mutate(pathotype = str_replace(pathotype, "EPEC", "IPEC")) %>%
+        mutate(pathotype = str_replace(pathotype, "ETEC", "IPEC")) %>%
+        mutate(pathotype = str_replace(pathotype, "EIEC", "IPEC")) %>%
+        mutate(pathotype = str_replace(pathotype, "EAEC", "IPEC")) %>%
+        mutate(pathotype = str_replace(pathotype, "DAEC", "IPEC")) %>%
+        unique() %>%
+        group_by(name) %>%
+        add_count() %>%
+        filter(n > 1)
+
+potential_hybrid_df <-
+        focused_VFs %>%
+        filter(name %in% potential_hybrids$name)
+
+upset_df <-
+        potential_hybrid_df %>%
+        select(name, Consensus_phylogroup, Revised_Source_Niche, GENE, Present) %>%
+        pivot_wider(names_from = "GENE",
+                    values_from = 'Present',
+                    values_fill = 0) %>% mutate_at(vars(-name,-Consensus_phylogroup, -Revised_Source_Niche), as.logical)
+
+intersect_cols <-
+        upset_df %>% select(-name,-Consensus_phylogroup, -Revised_Source_Niche) %>% colnames()
+
+upset(
+        data = upset_df,
+        intersect = intersect_cols,
+        name = "Consensus_phylogroup",
+        height_ratio = 3,
+        width_ratio = 0.1
+)
+
+upset_pathotype <- potential_hybrid_df %>%
+        select(name, Consensus_phylogroup, Revised_Source_Niche, pathotype, Present) %>%
+        unique() %>%
+        pivot_wider(names_from = "pathotype",
+                    values_from = 'Present',
+                    values_fill = 0) %>% mutate_at(vars(-name,-Consensus_phylogroup, -Revised_Source_Niche), as.logical)
+
+intersect_cols <-
+        upset_pathotype %>% select(-name,-Consensus_phylogroup, -Revised_Source_Niche) %>% colnames()
+
+phylogroups_in_upset <- upset_pathotype %>% pull(Consensus_phylogroup) %>% unique()
+
+clermont_cols_upset <- clermont_cols[names(clermont_cols) %in% phylogroups_in_upset]
+
+upset_pathotype <- left_join(upset_pathotype, count_of_amr_classes, by = "name")
+
+upset_pathotype <- upset_pathotype %>% rename("Source" = Revised_Source_Niche, "Phylogroup" = Consensus_phylogroup)
+
+upset(
+        data = upset_pathotype,
+        intersect = intersect_cols,
+        name = "Intersection of pathotype-associated genes",
+        height_ratio = 1,
+        width_ratio = 0.1,
+        base_annotations=list(
+        'Intersection size'=intersection_size(
+            counts=TRUE,
+            mapping=aes(fill=Phylogroup),
+            text_colors=c(
+                on_background='black', on_bar='black'
+            )
+        )+ scale_fill_manual(values=clermont_cols_upset
+        )
+    ),
+    annotations = list(
+        # 1st method - passing list:
+        'Classwise ARG count'=(
+            # note that aes(x=intersection) is supplied by default and can be skipped
+            ggplot(mapping=aes(y=Count_of_AMR_classes, color = Source))
+            # checkout ggbeeswarm::geom_quasirandom for better results!
+            + geom_jitter(na.rm=TRUE, alpha=0.5)
+            + scale_color_manual(values=source_cols)
+            + geom_violin(alpha=0.5, na.rm=TRUE, color = 'black')
+        ),
+        'Source Niche'=(
+            ggplot(mapping=aes(fill=Source))
+            + geom_bar(stat='count', position='fill')
+            + scale_y_continuous(labels=scales::percent_format())
+            + scale_fill_manual(values=source_cols)
+            +  labs(y= "Percentage from source")
+            )
+),
+        set_sizes=(
+                upset_set_size()
+                + theme(axis.text.x=element_text(angle=90)))
+)
+        
+
+focused_VFs %>% filter(name %in% potential_hybrids$name) %>% select(name, GENE, Present) %>% complete(name, GENE, fill = list(Present = 0))  %>% left_join(count_of_amr_classes) %>% left_join(binary_per_AMR_class) %>% group_by(Count_of_AMR_classes) %>% heatmap(.row = name, .column = GENE, .value = Present,
+                        palette_value = c("grey85", "blue", "red"))
+
+shiga_pos_strains <- focused_VFs %>% filter(grepl("^stx", GENE)) %>% pull(name) %>% unique()
+
+focused_VFs %>%
+        filter(name %in% shiga_pos_strains) %>%
+        filter(name %in% potential_hybrids$name) %>%
+        select(name, GENE, Present) %>%
+        complete(name, GENE, fill = list(Present = 0))  %>%
+        left_join(count_of_amr_classes) %>%
+        left_join(binary_per_AMR_class) %>%
+        left_join(small_meta) %>%
+        mutate(name_with_ST = paste0(name, " -- ST", ST_new, ":", Consensus_phylogroup)) %>%
+        mutate(name_with_ST = as.factor(name_with_ST)) %>%
+        rename('Genome' = name_with_ST, "Virulence Gene" = GENE, "Source" = Revised_Source_Niche) %>%
+        group_by(Count_of_AMR_classes) %>%
+        heatmap(.row = Genome, .column = `Virulence Gene`, .value = Present,
+                        palette_value = c("grey85", "blue", "red")) %>% annotation_tile(Source)
+
+                                                                                                                                                        
+```
+
+## HyPEC Tree
+```{r}
+
+HyPEC_tree <- read.tree("analysis/HyPEC_mashtree.dnd")
+
+HyPEC_tree <- midpoint_root(HyPEC_tree)
+
+HyPEC_meta <- genometa %>% filter(name %in% HyPEC_tree$tip.label) %>% select(name, ST_new, Collection_Year, ectyper..Serotype)
+
+vf_tree_df <- focused_VFs %>% select(name, GENE, Present)
+
+vf_tree_df <- vf_tree_df %>% filter(name %in% HyPEC_tree$tip.label)
+
+vag_to_VF_category <- focused_VFs %>% select(GENE, `VF Category`) %>% rename(VF_category = `VF Category`) %>% unique()
+
+vf_tree_df <- vf_tree_df %>% complete(name, GENE, fill = list(Present = 0))
+
+# Group by GENE and sum the values in the present column
+vf_tree_df <- vf_tree_df %>% group_by(GENE) %>% mutate(count = sum(Present)) %>% ungroup()
+
+# Remove genes which are present in less than 0% of the samples
+vf_tree_df <- vf_tree_df %>% filter(count > 0)
+
+
+vf_tree_df <- left_join(vf_tree_df, vag_to_VF_category)
+
+vf_tree_df <- vf_tree_df %>% arrange(VF_category)
+
+GENE_order <- vf_tree_df$GENE %>% unique()
+
+vf_tree_df <- vf_tree_df %>% mutate(GENE = factor(GENE, levels = GENE_order))
+
+vf_df_names <- vf_tree_df %>% pull(VF_category) %>% unique()
+
+amr_hypec <- amrfinder %>% filter(`Element type` == "AMR") %>% filter(name %in% HyPEC_tree$tip.label) %>% select(name, `Gene symbol`, Present) %>% rename(Gene = `Gene symbol`)
+
+# Group by GENE and sum the values in the present column
+amr_hypec <- amr_hypec %>% group_by(Gene) %>% mutate(count = sum(Present)) %>% ungroup()
+
+# Remove genes which are present in less than 0% of the samples
+amr_hypec <- amr_hypec %>% filter(count > 0) %>% select(-count)
+
+amr_hypec <- amr_hypec %>% complete(name, Gene, fill = list(Present = 0))
+
+ARG_classes <- amrfinder %>% select(`Gene symbol`, Reported_Class) %>% unique() %>% rename(Gene = 'Gene symbol')
+
+amr_hypec <- amr_hypec %>% left_join(ARG_classes) %>% arrange(Reported_Class) 
+
+amr_hypec <- amr_hypec %>% mutate(Gene = factor(Gene, levels = unique(amr_hypec$Gene)))
+
+# https://sashamaps.net/docs/resources/20-colors/
+vf_df_cols <- 
+        c('#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe', '#008080', '#e6beff', '#9a6324', '#fffac8', '#800000', '#aaffc3', '#808000', '#ffd8b1', '#000075', 'grey80', 'grey60', 'grey40', 'grey20', 'grey0')
+
+names(vf_df_cols) <- vf_df_names
+
+HyPEC_tree_plot <- ggtree(HyPEC_tree) %<+% HyPEC_meta +
+        geom_tiplab(size = 3, align = T) +
+        geom_tiplab(aes(label = Collection_Year), size = 3, align = T, linetype = NULL, offset = 0.07) +
+        geom_tiplab(aes(label = paste0("ST",ST_new, " ", ectyper..Serotype)), align = T, linetype = NULL,
+                    size = 3, offset = 0.09) +
+        theme(legend.position = "none")
+
+fruit_df_1 <- small_meta %>% rename('Phylogroup' = Consensus_phylogroup, 'Source' = Revised_Source_Niche)
+fruit_df_2 <- vf_tree_df  %>% mutate(Present = if_else(Present == 0, "Absent", "Present")) %>% rename(`Gene - Virulence` = Present)
+fruit_df_3 <- amr_hypec  %>% mutate(Present = if_else(Present == 0, "Absent", "Present")) %>% rename(`Gene - Resistance` = Present)
+
+colorRampPalette(c("red", "white", "blue"))(100)
+
+HyPEC_tree_plot +
+        # Layer for Phylogroup
+        geom_fruit(data = fruit_df_1,
+                   geom = geom_tile,
+                   mapping = aes(y = name,
+                                 fill = Phylogroup),
+                   pwidth = 0.01,
+                   offset = 11.5) +
+        scale_fill_manual(values = clermont_cols) +
+        new_scale_fill() +
+        # Layer for Source
+        geom_fruit(data = fruit_df_1,
+                   geom = geom_tile,
+                   mapping = aes(y = name,
+                                 fill = Source),
+                   pwidth = 0.01,
+                   offset = 0.7) +
+        scale_fill_manual(values = source_cols) +
+        new_scale_fill() +
+        # Layer for VF Genes
+        geom_fruit(data = fruit_df_2,
+                        geom = geom_tile,
+                        mapping = aes(y = name,
+                                      x = GENE,
+                                      fill = `Gene - Virulence`
+                                      ),
+                        pwidth = 12,
+                        offset = 0.5,
+         axis.params=list(
+                         axis="x",
+                         text.angle = 90,
+                         text.size = 2.5,
+                         line.size = 0,
+                         vjust = 0,
+                         hjust = 1
+                     )) +
+        scale_fill_manual(values = c("Absent" = "grey80", "Present" = "red")) +
+        # Layer for AMR Genes
+        new_scale_fill() +
+        geom_fruit(data = fruit_df_3,
+                        geom = geom_tile,
+                        mapping = aes(y = name,
+                                      x = Gene,
+                                      fill = `Gene - Resistance`
+                                      ),
+                        pwidth = 12,
+                        offset = 0.5,
+         axis.params=list(
+                         axis="x",
+                         text.angle = 90,
+                         text.size = 2.5,
+                         line.size = 0,
+                         vjust = 0,
+                         hjust = 1
+                     )) +
+        scale_fill_manual(values = c("Absent" = "grey80", "Present" = "blue4")) +
+        theme(legend.position = "right") +
+        ylim(-2, NA)
+
+
+
+
+```
+
+```{r}
+# Read in the cgMLST distances
+cgMLST_dists <- read_delim("analysis/cgMLST_dists_5471.txt", delim = "\t")
+
+# 
+allelic_distance_df <- cgMLST_dists %>%
+        rename('name' = `5471`) %>%
+        filter(name %in% HyPEC_tree$tip.label) %>%
+        select(name, all_of(HyPEC_tree$tip.label)) %>% 
+        column_to_rownames('name') %>%
+        t() %>%
+        as.data.frame() %>%
+        select(all_of(HyPEC_tree$tip.label)) %>%
+        rownames_to_column('sample_1') %>%
+        pivot_longer(cols = -sample_1, names_to = "sample_2") %>%
+        rename("Allelic_Distance" = value) %>%
+        mutate(`Allelic_Distance` = if_else(`Allelic_Distance` > 400, 400, `Allelic_Distance`))
+
+
+tree_order <- HyPEC_tree_plot$data %>% as.data.frame() %>% filter(isTip == T) %>% arrange(y) %>% pull(label)
+
+allelic_distance_df <- allelic_distance_df %>%
+        mutate(sample_1 = factor(sample_1, levels = tree_order)) %>%
+        mutate(sample_2 = factor(sample_2, levels = tree_order))
+
+
+
+HyPEC_tree_plot <- ggtree(HyPEC_tree) %<+% HyPEC_meta +
+        geom_tiplab(size = 3, align = T) +
+        geom_tiplab(aes(label = Collection_Year), size = 3, align = T, linetype = NULL, offset = 0.06) +
+        geom_tiplab(aes(label = paste0("ST",ST_new, " ", ectyper..Serotype)), align = T, linetype = NULL,
+                    size = 3, offset = 0.09) +
+        theme(legend.position = "none")
+
+fruit_df_1 <- small_meta %>% rename('Phylogroup' = Consensus_phylogroup, 'Source' = Revised_Source_Niche)
+fruit_df_2 <- allelic_distance_df %>% rename(`Allelic Distance` = Allelic_Distance)
+
+HyPEC_tree_plot +
+    new_scale_fill() +
+    geom_fruit(data = fruit_df_1,
+              geom = geom_tile,
+              mapping = aes(y = name,
+                          fill = Phylogroup),
+              pwidth = 0.01,
+              offset = 9) +
+    scale_fill_manual(values = clermont_cols) +
+    new_scale_fill() +
+    geom_fruit(data = fruit_df_1,
+              geom = geom_tile,
+              mapping = aes(y = name,
+                          fill = Source),
+              pwidth = 0.01,
+              offset = 0.7) +
+    scale_fill_manual(values = source_cols) +
+    new_scale_fill() +
+    geom_fruit(data = fruit_df_2, # Use the modified data
+              geom = geom_tile,
+              mapping = aes(y = sample_1,
+                          x = sample_2,
+                          fill = `Allelic Distance`),
+              pwidth = 12,
+              offset = 0.5,
+              axis.params=list(
+                axis="x",
+                text.angle = 90,
+                text.size = 3,
+                line.size = 0,
+                vjust = 0,
+                hjust = 1
+              )) + 
+        scale_fill_distiller(palette = "Spectral", direction = 1) +
+    # Show legend for the heatmap
+    theme(legend.position = "right") +
+    ylim(-5, NA)
+```
+
+# Figure 5
+```{r}
+
+small_meta <- small_meta %>% mutate(phylogroup_other = fct_lump_n(Consensus_phylogroup, 8))
+
+clermont_other_cols <- c(clermont_cols, "Other" = 'black')
+
+tree_vf_df <- virulence_df_for_plot %>%
+        full_join(sample_names, by = 'name') %>%
+        select(name,
+               GENE,
+               Present) %>%
+                # Ensure all combinations of Consensus_phylogroup and Reported_Class are present
+        complete(name, GENE, fill = list(Present = 0)) %>%
+        mutate(for_cell_in_heatmap = if_else(Present == 0, "Gene absent", "Gene present")) %>% 
+        mutate(fill_column = if_else(for_cell_in_heatmap == "Gene present", "red", "white")) %>%
+        group_by(GENE) %>%
+        mutate(count = sum(Present)) %>%
+        ungroup() %>%
+        mutate(perc = scales::percent(count/nrow(small_meta), accuracy = 0.01)) %>% 
+        mutate(GENE_colname = paste0(GENE, " (n=",count,"/",nrow(small_meta)," ", perc, ")"))
+
+vf_categories <- virulence_df_for_plot %>% select(GENE, `VF Category`) %>% unique()
+
+p2 <- ggtree(tree,
+            #layout = 'fan',
+            #open.angle = 20,
+            branch.length = 'none'
+) +
+        geom_tree(size = 0.5)
+
+for (category in unique(vf_categories$`VF Category`)) {
+        if (category == "Exotoxin") {
+                min_count = 2
+        } else {
+                min_count = 10
+        }
+
+        plot_df <- tree_vf_df %>%
+                left_join(vf_categories, by = 'GENE') %>%
+                filter(`VF Category` == category)  %>%
+                filter(count > min_count)
+
+        tree_heatmap <- p2 +
+                geom_fruit(data = small_meta,
+                        geom = geom_tile,
+                        mapping = aes(y = name,
+                                      fill = phylogroup_other
+                                      ),
+                        color = adjustcolor("grey50", alpha.f = 0),
+                        offset = 0.1,
+                        size = 2,
+                        pwidth = 6,
+                        grid.params = list(alpha = 0)
+                ) +
+                geom_fruit(data = small_meta,
+                        geom = geom_tile,
+                        mapping = aes(y = name,
+                                      fill = Revised_Source_Niche
+                                      ),
+                        color = adjustcolor("grey50", alpha.f = 0),
+                        offset = 0.1,
+                        size = 2,
+                        pwidth = 6,
+                        grid.params = list(alpha = 0)
+                )+
+                geom_fruit(
+                        data = plot_df,
+                        geom = geom_tile,
+                        mapping = aes(
+                                y = name,
+                                x = GENE_colname,
+                                fill = for_cell_in_heatmap
+                                ),
+                        color = adjustcolor("grey50", alpha.f = 0),
+                        offset = 0.4,
+                        size = 2,
+                        pwidth = 8,
+                        grid.params = list(alpha = 0),
+                        axis.params = list(axis = 'x', text.angle = 90, hjust = 1, text.size = 2)
+                ) +
+                scale_fill_manual(values = c(clermont_other_cols, list("Gene present" = "red","Gene absent" = "grey90"), source_cols)) +
+                theme(legend.position = "none") +
+                ylim(-1000, 1.01*(nrow(sample_names)))
+        
+        
+        # Save the figure
+        ggsave(tree_heatmap,
+                filename = paste0(
+                        "figures/",
+                        str_replace_all(category, " |\\/", "_"),
+                        "_tree_heatmap.pdf"
+                ),
+                width = 11.69,
+                height = 8.27,
+                dpi = 300,
+                device='pdf')
+        print(paste(category, "complete"))
+}
+
+```
+
+
+```{r}
+
+# Take the first three unique values of VF Category
+first_VAG_df <- VFDB_plot_df %>% select(`VF Category`) %>% unique() %>% head(3) %>% pull()
+
+# Take the second three unique values of VF Category
+second_VAG_df <- VFDB_plot_df %>% select(`VF Category`) %>% unique() %>% tail(length(.)-3) %>% head(3) %>% pull()
+
+# Take the third three unique values of VF Category
+third_VAG_df <- VFDB_plot_df %>% select(`VF Category`) %>% unique() %>% tail(length(.)-6) %>% head(3) %>% pull()
+
+#Take the second last unique values of VF Category
+fourth_VAG_df <- VFDB_plot_df %>% select(`VF Category`) %>% unique() %>% tail(length(.)-9)  %>% pull()
+
+vfdb_genewise_df <- VFDB_plot_df %>%
+        select(name, GENES, `VF Category`) %>%
+        unique() %>%
+        mutate(Present = 1) %>%
+        full_join(small_meta, by = 'name') %>%
+        mutate(Present = replace_na(Present, 0)) %>%
+        group_by(GENES) %>%
+        mutate(total_gene_count = sum(Present)) %>%
+        filter(total_gene_count > 10 | `VF Category` == "Exotoxin") %>%
+        group_by(`VF Category`, GENES, Revised_Source_Niche) %>%
+        mutate(count = sum(Present)) %>%
+            # Add a percent column
+    mutate(percent = total_gene_count / `Count of Source`, accuracy = 0.01) %>%
+    mutate(GENES = paste0(GENES, " n=",total_gene_count)) %>%
+        select(GENES, total_gene_count, Revised_Source_Niche, `VF Category`, `Count of Source`, count) %>%
+        unique() %>%
+        
+            # Add a percent column
+    mutate(percent = total_gene_count / `Count of Source`, accuracy = 0.01) %>%
+        ungroup()
+        
+        
+        # Filter to `VF Category` for this plot
+        Figure_5A <- vfdb_genewise_df %>%
+                filter(`VF Category` %in% first_VAG_df) %>%
+        # Make a barplot of the number of resistance loci in each rarity category
+        ggplot(aes(x = GENES, y = count, fill = Revised_Source_Niche)) +
+        # Facet wrap
+        facet_wrap(~`VF Category`, scales = "free_x", ncol = 1, nrow = 3) +
+        geom_col() +
+        labs(
+                x = "Virulence locus",
+                y = "Count of resistance loci"
+        ) +
+        theme_minimal() +
+        theme(legend.position = "none",
+              axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 6)
+        ) + scale_fill_manual(values = source_cols) +
+        scale_x_discrete(expand = c(0, 0)) +
+        scale_y_continuous(limits = c(0, nrow(small_meta)), breaks = seq(0, nrow(small_meta), 1000))
+
+# Filter to `VF Category` for this plot
+        Figure_5B <- vfdb_genewise_df %>%
+                filter(`VF Category` %in% second_VAG_df) %>%
+        # Make a barplot of the number of resistance loci in each rarity category
+        ggplot(aes(x = GENES, y = count, fill = Revised_Source_Niche)) +
+        # Facet wrap
+        facet_wrap(~`VF Category`, scales = "free_x", ncol = 1, nrow = 3) +
+        geom_col() +
+        labs(
+                x = "Virulence locus",
+                y = "Count of resistance loci"
+        ) +
+        theme_minimal() +
+        theme(legend.position = "none",
+              axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 6)
+        ) + scale_fill_manual(values = source_cols) +
+        scale_x_discrete(expand = c(0, 0)) +
+        scale_y_continuous(limits = c(0, nrow(small_meta)), breaks = seq(0, nrow(small_meta), 1000))
+
+# Filter to `VF Category` for this plot
+        Figure_5C <- vfdb_genewise_df %>%
+                filter(`VF Category` %in% third_VAG_df) %>%
+        # Make a barplot of the number of resistance loci in each rarity category
+        ggplot(aes(x = GENES, y = count, fill = Revised_Source_Niche)) +
+        # Facet wrap
+        facet_wrap(~`VF Category`, scales = "free_x", ncol = 1, nrow = 3) +
+        geom_col() +
+        labs(
+                x = "Virulence locus",
+                y = "Count of resistance loci"
+        ) +
+        theme_minimal() +
+        theme(legend.position = "none",
+              axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 6)
+        ) + scale_fill_manual(values = source_cols) +
+        scale_x_discrete(expand = c(0, 0)) +
+        scale_y_continuous(limits = c(0, nrow(small_meta)), breaks = seq(0, nrow(small_meta), 1000))
+        
+# Filter to `VF Category` for this plot
+        Figure_5D <- vfdb_genewise_df %>%
+                filter(`VF Category` %in% fourth_VAG_df) %>%
+        # Make a barplot of the number of resistance loci in each rarity category
+        ggplot(aes(x = GENES, y = count, fill = Revised_Source_Niche)) +
+        # Facet wrap
+        facet_wrap(~`VF Category`, scales = "free_x", ncol = 1, nrow = 3) +
+        geom_col() +
+        labs(
+                x = "Virulence locus",
+                y = "Count of resistance loci"
+        ) +
+        theme_minimal() +
+        theme(legend.position = "none",
+              axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 6)
+        ) + scale_fill_manual(values = source_cols) +
+        scale_x_discrete(expand = c(0, 0)) +
+        scale_y_continuous(limits = c(0, nrow(small_meta)), breaks = seq(0, nrow(small_meta), 1000))
+        
+
+# Save to file        
+ggsave("figures/Figure_5A.pdf", Figure_5A, width = 8.27, height = 11.69, dpi = 300, device='pdf')
+ggsave("figures/Figure_5B.pdf", Figure_5B, width = 8.27, height = 11.69, dpi = 300, device='pdf')
+ggsave("figures/Figure_5C.pdf", Figure_5C, width = 8.27, height = 11.69, dpi = 300, device='pdf')
+ggsave("figures/Figure_5D.pdf", Figure_5D, width = 8.27, height = 11.69, dpi = 300, device='pdf')
+
+Figure_5A
+Figure_5B
+Figure_5C
+Figure_5D
+```
+
+```{r}
+
+
+vfdb_genewise_df <- VFDB_plot_df %>%
+        select(name, GENE, `VF Category`) %>%
+        unique() %>%
+        mutate(Present = 1) %>%
+        full_join(small_meta, by = 'name') %>%
+        mutate(Present = replace_na(Present, 0)) %>%
+        group_by(GENE) %>%
+        mutate(total_gene_count = sum(Present)) %>%
+        #filter(total_gene_count > 10 | `VF Category` == "Exotoxin") %>%
+        group_by(`VF Category`, GENE, Revised_Source_Niche) %>%
+        mutate(count = sum(Present)) %>%
+            # Add a percent column
+    mutate(percent = total_gene_count / `Count of Source`, accuracy = 0.01) %>%
+    mutate(GENE = paste0(GENE, " n=",total_gene_count)) %>%
+        select(GENE, total_gene_count, Revised_Source_Niche, `VF Category`, `Count of Source`, count) %>%
+        unique() %>%
+        
+            # Add a percent column
+    mutate(percent = total_gene_count / `Count of Source`, accuracy = 0.01) %>%
+        ungroup()
+        
+        
+for(category in unique(vfdb_genewise_df$`VF Category`)) {
+        if(category %in% c("Effector delivery system", "Adherence")) {
+                fontsize = 3
+        } else { fontsize = 6 }
+        
+        vf_plot <- vfdb_genewise_df %>%
+                        filter(`VF Category` %in% category) %>%
+                # Make a barplot of the number of resistance loci in each rarity category
+                ggplot(aes(x = GENE, y = count, fill = Revised_Source_Niche)) +
+                geom_col() +
+                labs(
+                        x = paste(category, "gene"),
+                        y = "Count of Virulence loci"
+                ) +
+                theme_minimal() +
+                theme(legend.position = "none",
+                      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = fontsize)
+                ) + scale_fill_manual(values = source_cols) +
+                scale_x_discrete(expand = c(0, 0)) +
+                scale_y_continuous(limits = c(0, nrow(small_meta)), breaks = seq(0, nrow(small_meta), 1000))
+        
+        # Save to file        
+        ggsave(paste0("figures/virulence_bars/",str_replace_all(category,"\\/| ","_"), ".pdf"), vf_plot, width = 11.69, height = 8.27, dpi = 300, device='pdf')
+}
+
+```
+
+```{r}
+library(ggtreeExtra)
+library(ggnewscale)
+
+treeplot <- ggtree(tree) +
+        theme(legend.position = "none")
+
+small_meta_for_tree <- genometa %>%
+        dplyr::select(name, Revised_Source_Niche, ST_new, Consensus_phylogroup, State, `ABRICATE..EC_custom_intI1_HQ730118.1`) %>%
+        rename("intI1" = `ABRICATE..EC_custom_intI1_HQ730118.1`) %>%
+        mutate(State = replace_na(State, "Unknown")) %>%
+        mutate(ST_other = fct_lump_n(ST_new, 10)) %>%
+        rename(Phylogroup = Consensus_phylogroup, Source = Revised_Source_Niche, `ST (Top 10)` = "ST_other")
+
+  
+ST_other_cols <- iwanthue(length(unique(small_meta_for_tree$`ST (Top 10)`)), plot = FALSE)
+
+names(ST_other_cols) <- unique(small_meta_for_tree$ST_other)
+
+AMR_fruit_df <- binary_per_AMR_class %>% group_by(name) %>% mutate(classwise_count = sum(Present)) %>% ungroup() %>% mutate(Present = as.character(Present)) %>% pivot_wider(names_from = classwise_counting_col, values_from = Present) %>% mutate(` MDR` = if_else(classwise_count >= 3, "1", "0"), ` XDR` = if_else(classwise_count >= 10, "1", "0")) %>% select(name, classwise_count, ` MDR` , ` XDR`, everything()) %>% pivot_longer(names_to = 'Trait', values_to = "Present", cols = c(-name, -classwise_count)) %>% 
+        mutate(Trait = factor(Trait, levels = unique(Trait))) %>%
+        mutate(Present = as.character(Present)) %>%
+        rename("Resistance genes" = Present)
+
+mock_pathotype_data <- sample_names
+
+
+focused_VFs <- virulence_df_for_plot %>%
+        filter(
+                grepl('^stx|^tir|^eae|^espA|^escC', GENE) | #EHEC
+                        grepl('^cdtA|^bfpB|^east1', GENE) |         #EPEC
+                        grepl('^eltA|^eastIa|^etpB', GENE) | #ETEC
+                        grepl('^ipaA|^mxiD|^spa13|^iscA', GENE) | #EIEC
+                        grepl('^aafA|^aap|^pet', GENE) | #EAEC
+                        grepl('^draA', GENE) | #DAEC
+                        grepl('^papG|^sfaE|^iroN|^iucD|^fyuA|^senB', GENE) | #UPEC
+                        #Original above
+                        #grepl('^papG|^iroN|^iucD|^fyuA|^senB', GENE) | #UPEC
+                        grepl('^ibeA|^kpsT|^neuC', GENE) #NMEC
+        )
+
+focused_VFs <- focused_VFs %>%
+        mutate(pathotype = NA) %>%
+        mutate(pathotype = if_else(grepl('^stx|^tir|^eae|^espA|^escC', GENE), "EHEC", pathotype)) %>%
+        mutate(pathotype = if_else(grepl('^cdtA|^bfpB|^east1', GENE), "EPEC", pathotype)) %>%
+        mutate(pathotype = if_else(grepl('^eltA|^eastIa|^etpB', GENE), "ETEC", pathotype)) %>%
+        mutate(pathotype = if_else(grepl('^ipaA|^mxi|^spa|^iscA', GENE), "EIEC", pathotype)) %>%
+        mutate(pathotype = if_else(grepl('^aafA|^aap|^pet', GENE), "EAEC", pathotype)) %>%
+        mutate(pathotype = if_else(grepl('^draA', GENE), "DAEC", pathotype)) %>%
+        mutate(pathotype = if_else(grepl('^papG|^sfaE|^iroN|^iucD|^fyuA|^senB', GENE), "UPEC", pathotype)) %>%
+        mutate(pathotype = if_else(grepl('^ibeA|^kpsT|^neuC', GENE), "NMEC", pathotype))
+
+
+Pathotype_fruit_df <-
+        focused_VFs %>%
+        select(name, pathotype, Present) %>% unique() %>%
+        pivot_wider(names_from = "pathotype", values_from = "Present", values_fill = 0) %>%
+        full_join(sample_names, by = 'name') %>%
+        mutate_all(replace_na, 0) %>%
+        pivot_longer(names_to = 'Trait', values_to = "Present", cols = c(-name)) %>% 
+        mutate(Trait = factor(Trait, levels = unique(Trait))) %>%
+        mutate(Present = as.character(Present)) %>%
+        rename("Pathotype-associated genes" = Present)
+
+
+basetree <- treeplot +
+        new_scale_fill() +
+        geom_fruit(data = small_meta_for_tree,
+                   geom = geom_tile,
+                   mapping = aes(y = name,
+                                 fill = Phylogroup),
+                   pwidth = 100,
+                   offset = 0.1,
+                   axis.params=list(
+                         axis="x",
+                         text = "Phylogroup",
+                         text.angle = 90,
+                         text.size = 2,
+                         line.size = 0,
+                         vjust = 0.5,
+                         hjust = 1
+                     ))  +
+        scale_fill_manual(values = clermont_cols) +
+        new_scale_fill() +
+        geom_fruit(data = small_meta_for_tree,
+                   geom = geom_tile,
+                   mapping = aes(y = name,
+                                 fill = `ST (Top 10)`),
+                   pwidth = 100,
+                   offset = 0.1,
+                   axis.params=list(
+                         axis="x",
+                         text = "ST (Top 10)",
+                         text.angle = 90,
+                         text.size = 2,
+                         line.size = 0,
+                         vjust = 0.5,
+                         hjust = 1
+                     )) +
+        scale_fill_manual(values = ST_other_cols) +
+        new_scale_fill() +
+        geom_fruit(data = small_meta_for_tree,
+                   geom = geom_tile,
+                   mapping = aes(y = name,
+                                 fill = Source),
+                   pwidth = 100,
+                   offset = 0.1,
+                   axis.params=list(
+                         axis="x",
+                         text = "Source",
+                         text.angle = 90,
+                         text.size = 2,
+                         line.size = 0,
+                         vjust = 0.5,
+                         hjust = 1
+                     )) +
+        scale_fill_manual(values = source_cols) +
+        new_scale_fill() +
+        geom_fruit(data = small_meta_for_tree,
+                   geom = geom_tile,
+                   mapping = aes(y = name,
+                                 fill = State),
+                   pwidth = 100,
+                   offset = 0.1,
+                   axis.params=list(
+                         axis="x",
+                         text = "State",
+                         text.angle = 90,
+                         text.size = 2,
+                         line.size = 0,
+                         vjust = 0.5,
+                         hjust = 1
+                     )) +
+        scale_fill_manual(values = state_cols) +
+        theme(legend.position = "right",
+              legend.title = element_text(size = 8),   # Smaller legend title text
+              legend.text = element_text(size = 6),    # Smaller legend labels text
+              legend.key.size = unit(0.25, "cm"),      # Smaller legend key (box symbol)
+              legend.spacing.y = unit(0.1, "cm"),
+              legend.spacing.x = unit(0.25, "cm"))      # Vertical spacing     
+
+
+basetree + 
+        new_scale_fill()+
+        geom_fruit(data = AMR_fruit_df,
+                   geom = geom_tile,
+                   mapping = aes(y = name,
+                                 x= Trait,
+                                 fill = `Resistance genes`),
+                   pwidth = 1,
+                   offset = 0.1,
+                   axis.params=list(
+                         axis="x",
+                         text.angle = 90,
+                         text.size = 2,
+                         line.size = 0,
+                         vjust = 0.5,
+                         hjust = 1
+                     )) +
+        scale_fill_manual(values = c("0" = "grey80", "1" = "blue4")) +
+        new_scale_fill()+
+        geom_fruit(data = Pathotype_fruit_df,
+                   geom = geom_tile,
+                   mapping = aes(y = name,
+                                 x= Trait,
+                                 fill = `Pathotype-associated genes`),
+                   pwidth = 1,
+                   offset = 0.1,
+                   axis.params=list(
+                         axis="x",
+                         text.angle = 90,
+                         text.size = 2,
+                         line.size = 0,
+                         vjust = 0.5,
+                         hjust = 1
+                     )) +
+        scale_fill_manual(values = c("0" = "grey80", "1" = "red3")) +
+        ylim(-400, NA)
+
+focused_VFs  %>% select(name, GENE, Present, pathotype) %>% filter(pathotype == "UPEC") %>% select(-pathotype) %>% pivot_wider(names_from = "GENE", values_from = "Present", values_fill = 0) %>% full_join(sample_names, by = "name") %>% column_to_rownames('name') %>%
+        # Replace NAs in all columns with 0
+        mutate_all(replace_na, 0)
+```
+
+```{r}
+
+```
+

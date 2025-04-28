@@ -1,0 +1,570 @@
+---
+title: "Nature Data Reports"
+author: "Max Cummins"
+date: "2024-11-10"
+output:
+  html_document: 
+    code_folding: hide
+  pdf_document: default
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+#Read in our packages
+library(tidyverse)
+library(vroom)
+library(ggplot2)
+library(xml2)
+library(ggrepel)
+library(caret)
+library(here)
+library(scales)
+library(plotly)
+library(ComplexHeatmap)
+library(grid)
+library(ComplexUpset)
+library(hues)
+library(ggpubr)
+
+knitr::opts_chunk$set(
+	message = FALSE,
+	warning = FALSE,
+	include = FALSE,
+	root.dir = here::here()
+)
+#Define our not in function
+`%nin%` <- Negate(`%in%`)
+```
+
+# Genomic characteristics of Australian Escherichia coli; mobile genetic elements carriage and virulence and antimicrobial resistance gene profiles
+
+## Authorship
+
+Max L. Cummins^\^,1,2^, Anne Watt^\^,3,4^, Celeste Donatto^3,4^, Amy V.
+Jennison^5^, Torsten Seemann^3,6^, Erica Donner^8,9^, Danielle J
+Ingle^3,4^, Benjamin P. Howden^+,3,4,6^ and Steven P. Djordjevic^+,1,2^
+on behalf of the Australian Pathogen Genomics Program, One Health group.
+
+^1^ Australian Institute for Microbiology and Infection, University of
+Technology Sydney, Ultimo, Australia
+
+^2^ The Australian Centre for Genomic Epidemiological Microbiology,
+University of Technology Sydney, Ultimo, Australia
+
+^3^ Microbiological Diagnostic Unit, Public Health Laboratory, Peter
+Doherty Institute for Infection & Immunity, University of Melbourne,
+Melbourne, Victoria, Australia
+
+^4^ Department of Microbiology and Immunology, Peter Doherty Institute
+for Infection & Immunity, University of Melbourne, Melbourne, Victoria,
+Australia
+
+^5^ Public Health Microbiology, Forensic and Scientific Services,
+Queensland Department of Health, Brisbane, Australia
+
+^6^ Centre for Pathogen Genomics, Department of Microbiology and
+Immunology, University of Melbourne, Victoria, Australia
+
+^7^ Commonwealth Scientific and Industrial Research Organisation
+(CSIRO), Environment Business Unit, Urrbrae, South Australia, Australia
+
+^8^ Future Industries Institute, University of South Australia, Mawson
+Lakes, SA 5095, Australia
+
+^9^ Cooperative Research Centre for SolvingAntimicrobial Resistance in
+Agribusiness, Food, and Environments, Mawson Lakes, SA 5095, Australia
+
+^\^^ - Joint first authors
+
+^+^ - Joint last authors
+
+## Abstract
+
+## Introduction
+
+In 2021 an estimated 4.71 million deaths were attributable to
+antimicrobial resistance (AMR), however through improvements in
+health-care quality and accessibility to effective antimicrobials it is
+forecast that 92 million deaths might be prevented between 2025 and 2050
+(REF). While improving access to high-quality health-care and
+efficacious antimicrobials is critical in improving social, economic and
+health outcomes in this context, an improved understanding of the
+mechanisms through which AMR is evolving and spreading is required to
+inform strategies which can mitigate its impact. Genomic technologies
+are a powerful tool in the surveillance of antimicrobial resistance, in
+doing so informing empirical antimicrobial administration as well as
+providing oversight to the reservoirs and vectors of antimicrobial
+resistance which are critical to its evolution and dissemination. While
+surveillance of clinical pathogens is critical within this context, so
+to is that of populations of both commensals and pathogens within other
+settings. Usage of antimicrobials within food-animal production is known
+to have directly facilitated the spread of antimicrobial resistance,
+such as in the case of mcr-mediated colistin resistance and
+fluoroquinolone resistance in Enterobacteriaceae, however it is believed
+that the majority of antimicrobial resistance genes are of environmental
+origin. Despite this, genomic surveillance of environmental microbial
+communities remains limited.
+
+Similarly, populations of microbes which inhabit, or contaminate,
+food-products, companion animals, wildlife and wastewater remain
+relatively understudied, despite all such populations being known to
+harbour pathogens which can directly infect humans as well as
+antimicrobial resistant microorganisms, many of which can readily confer
+such resistance traits (as well as virulence traits) to bacteria which
+can colonise and infect human populations. Colonising opportunistic
+pathogens are of particular concern, given their ability to both reside
+within the gastrointestinal tract of humans and animals (and in the
+process be exposed to antimicrobial compounds given for therapeutic, and
+in the case of food-animals, and the purposes of prophylaxis and/or
+growth promotion), contaminate (and in some cases) within food-products
+destined for human and/or animal consumption and persist in
+environmental reservoirs where selection pressures can result in their
+accumulation of known and novel antimicrobial resistance genes.
+
+Antimicrobial stewardship and practices for the sanitization of food and
+water vary greatly across nations; as a result there are regional
+differences in AMR prevalence. Some countries have made great progress
+in establishing genomic surveillance systems to generate data on the AMR
+burden associated with microbial populations associated with diverse
+(human and non-human) hosts and environments, yet it is generally true
+that the carriage of ARGs is poorly understood both quantitatively and
+qualitatively. While for-purpose datasets are required for quantifying
+resistance gene carriage to any meaningful degree of accuracy, such
+datasets are expensive and time consuming to produce. Aggregative
+retrospective datasets, despite commonly being biased by
+overrepresentation of genomes of antimicrobial resistant strains of
+(human) clinical origin, can provide insight into the antimicrobial
+resistance genes circulating within a region and inform prospective
+surveillance efforts which can provide more robust estimates of ARG
+burden within human, animal and environmental settings. It can also shed
+light on their association with mobile genetic elements, and the
+intersection of these elements with virulence associated genes which
+mediate E. coli pathogenesis. Here we perform genomic analysis on a
+collection of 5,741 Australian Escherichia coli genomes originating from
+a diverse range of hosts and substrates. Collected over a period of 36
+years, these genomes represent the near entirety of published genomes
+from this species within the region under study. We performed genotypic
+and phylogenetic characterization of this cohort to determine their
+carriage of ARGs.
+
+## Methodology
+
+### Genome collation
+We collated a E. coli genome collection
+from in house collections as well publicly available genome sequences.
+All genomes were generated using short-read sequencing; metadata,
+genotypic data, bioproject and accession numbers for genomes under
+analysis are available in Supplementary Table 1.
+
+### Companion scripts
+Genomes were analysed using a Snakemake [1] pipeline available at
+<https://www.github> .com/maxlcummins/pipelord. Scripts used to process
+and visualise data are available on Github
+(<https://www.github.com/maxlcummins/APG-OHEC-2>). Default parameters
+were used unless otherwise stated.
+
+###Genome pre-processing Read filtering
+and trimming with fastp [24] v0.20.1 was performed before assembly using
+Spades [2] v3.14 via shovill (www.github.com/tseeman/shovill) v1.0.4.
+Genomes were required to exhibit: i) 3,800,000 and 6,615,000 bases in
+length using assembly-stats
+(<https://github.com/sanger-pathogens/assembly-stats>); ii) a known or
+novel multi-locus sequence type (MLST) of E. coli (Achtman scheme)
+(www.github.com/tseeman/mlst, v2.19.0); iii) ≥ 50% of reads mapping to
+E. coli using Kraken2 [3] v2.1.2 (parameter: ‘--db bacteria') and
+Bracken [4] v2.5; iv) ≤ 10% contamination and ≥ 90% completeness via
+CheckM [5] v1.2.0, and; v) ≥ 95% of 2,513 core-genome multi-locus
+sequence type (cgMLST) alleles present.
+
+### Phylogenetic analysis cgMLST
+analysis was performed using chewBBACA [6] v2.8.5 (schema
+<https://enterobase.warwick.ac.uk/schemes/Escherichia.cgMLSTv1> -
+accessed 19/07/2022) via Coreugate
+(<https://github.com/MDU-PHL/Coreugate>) v2.0.5 as were the pairwise
+cgMLST allelic distances which were used to generate a phylogenetic tree
+using rapidNJ [7] v2.3.3. Isolates with an allelic distance ≤ 10 were
+considered potential transmission events, based on previous research
+[8]. Phylogroups were assigned using Clermontyper [9] v2.0.3.
+
+### Genotyping
+Screening for ARGs, VAGs and mobile genetic elements was performed using
+Abricate (<https://github.com/tseemann/abricate>) version 1.0.1 (≥ 90%
+coverage and identity threshold) via pipelord. Virulence factor database
+[10], ISFinder [11] and PlasmidFinder [12] as well as a custom database
+were utilised, all of which are available at
+<https://www.github.com/maxlcummins/APG-OHEC-2>. We also performed
+plasmid multi-locus sequence typing using pmlst [12]. The Liu et al.
+criteria [13] for ColVLP carriage was utilised, with genomes exhibiting
+carriage of one or more ColV genes (defined as ≥95% nucleotide identity
+and ≥ 90% coverage) from four or more of the following sets of genes
+considered to carry a ColVLP: (i) cvaABC and cvi (the ColV operon), (ii)
+iroBCDEN (salmochelin operon), (iii) iucABCD and iutA (the aerobactin
+operon), (iv) etsABC, (v) ompT and hylF, and (vi) sitABCD. Scripts used
+to determine ColVLP carriage, and process IncF RST data are available on
+github. Statistical analysis
+
+### Statistical analyses were performed using R
+version 4.0.2. Packages utilised therein and for general processing and
+visualisation in R include: ggvenn [14] v0.1.10, plotly [15] v4.10.2,
+igraph v2.0.3 [16], tidyverse [17] v2.0.0, ggplot2 [18] v3.4.4, ggrepel
+[19] v0.9.3, ggalluvial [20] v0.12.5, caret [21] v6.0-94, pheatmap [22]
+v1.0.12, circlize [23] v0.4.15, plotly [15] v4.10.2, igraph v2.0.3 [16],
+tidyverse [17] v2.0.0, ggplot2 [18] v3.4.4, ggrepel [19] v0.9.3,
+ggalluvial [20] v0.12.5, caret [21] v6.0-94, pheatmap [22] v1.0.12 and
+scales [24] v1.3.0. Hierarchical clustering (as seen in Figure 2) was
+performed based on Euclidian distances between the source-wise
+prevalence matrix for major STs using ComplexHeatmap [25].
+
+## Read in our tree and genomic and metadata dataset
+
+```{r Merge_analysis_outputs, include=FALSE}
+
+genometa <- vroom("delims/genometa_n5471.txt", show_col_types = FALSE)
+
+small_meta <- genometa %>% select(name, Revised_Source_Niche, ST_new, Consensus_phylogroup, `ABRICATE..EC_custom_intI1_HQ730118.1`) %>% group_by(Consensus_phylogroup) %>% add_count() %>% rename(`Count of Phylogroup` = n) %>% group_by(Revised_Source_Niche) %>% add_count() %>% rename(`Count of Source` = n) %>% group_by(ST_new) %>% add_count() %>% rename(`Count of ST` = n) %>% rename("Class 1 integrase" = `ABRICATE..EC_custom_intI1_HQ730118.1`) 
+
+#Read in our tree
+tree <- ggtree::read.tree("analysis/RapidNJ_5471.nwk")
+
+#Remove quotes from sample names
+tree$tip.label <- gsub("'", '', tree$tip.label)
+tree$tip.label <- gsub("\\.fa", "", tree$tip.label)
+
+#Create a list of samples in our cohort
+sample_names <- tree$tip.label %>% as.data.frame() %>% rename('name' = '.')
+
+#Read in abritamr data in long format
+#abritamr_long <- vroom("delims/long_format_abritamr_5471.txt", show_col_types = FALSE)
+
+```
+
+
+```{r Color_definitions, message=FALSE, warning=FALSE, include=FALSE}
+#Overwrite with different colours
+source_cols <- c("Companion Animal" = "#59398d",
+         "Environmental" = "#709b46",
+         "Food" = "#c09f3d",
+         "Human" = "#48c595",
+         "Livestock" =  "#c26bbc",
+         "Wild Animal" = "#b9553d")
+
+#Create fake colour for header
+phylogroup_header <- c(NA)
+names(phylogroup_header) <- 'Phylogroups'
+
+#Define our colours for our phylogroups
+clermont_cols <- c('#ffe119', '#4363d8', '#f58231', '#dcbeff', '#800000', '#000075', '#9A6324', 'red', '#3cb44b',  'white', '#a9a9a9', 'black', 'purple')
+
+#Assign our color names for phylogroups
+names(clermont_cols) <- c("A", "B1",  "B2", "C", "D", "E", "F", "G", "E or cladeI", "cladeI", "cladeIII", "cladeIV", "Unknown")
+```
+
+
+## Results 
+
+Strains were collected from all eight Australian States and Territories (Figure 1) and originate from humans (n=2,996), wild animals (n=870), livestock (n=649), companion animals (n=375), environmental sources (n=292) and food (n=289). This collection is phylogenetically diverse and spans all eight sensu stricto E. coli phylogroups A (n=955), B1 (n=701), B2 (n=2175), C (n=124), D (n=792), E (n=206), F (n=348) and G (n=154). Additionally, genomes were allocated to clades I (n=6), III (n=2) and IV (n=1) while a further 7 genomes were unable to be assigned to a phylogroup, and were typed as ‘E or Clade I’ (n=4) or “Unknown” (n=3).
+
+```{r}
+
+library(ggalluvial)
+genometa %>% mutate(ST_other = fct_lump_n(ST_new, n = 20)) %>% mutate(Consensus_phylogroup_other = fct_lump_n(Consensus_phylogroup, n = 8)) %>% select(State, Revised_Source_Niche, Consensus_phylogroup_other, ST_other) %>%
+        group_by(State, Revised_Source_Niche, Consensus_phylogroup_other, ST_other) %>%
+        add_count() %>%
+        rename('Freq' = n) %>%
+        ggplot(aes(axis1 = State, axis2 = Revised_Source_Niche, axis3 = Consensus_phylogroup_other, axis4 = ST_other)) +
+          scale_x_discrete(limits = c("State", "Revised_Source_Niche", "Consensus_phylogroup_other", "ST_other"), expand = c(.2, .05)) +
+          xlab("Demographic") +
+          geom_alluvium(aes(fill = Revised_Source_Niche)) +
+          geom_stratum() +
+          geom_text(stat = "stratum", aes(label = after_stat(stratum))) +
+          theme_minimal() +
+          ggtitle("passengers on the maiden voyage of the Titanic",
+                  "stratified by demographics and survival") +
+        scale_fill_manual(values = source_cols)
+
+
+```
+
+In total, 827 sequence types were identified, the most prevalent of which were STs 131 (n=841 [B2]), 95 (n=247 [B2]), 10 (n=223 [A]), 1193 (n=201 [B2]), 73 (n=183 [B2]), 38 (n=174 [D]), 69 (n=170 [D]), 117 (n=132 [G]), 648 (n=113 [F]) and 127 (n=91 [B2]).
+Comprehensive data detailing strain origins, phylogroup and sequence type designations and other genotypic data presented in this manuscript are available in Supplementary Table 1.
+
+
+```{r count CIA res, echo=FALSE, fig.height=8, fig.width=12}
+
+#Read in abritamr data
+abritamr <- read_delim("analysis/abritamr_resistance.txt", 
+    delim = "\t", escape_double = FALSE, 
+    trim_ws = TRUE,
+    show_col_types = FALSE)
+
+#Create a list of samples in our tree
+sample_names <- tree$tip.label %>% as.data.frame() %>% rename('name' = '.') %>% mutate(name = str_replace_all(name, "\\'", ''))
+
+#Filter out samples not in the tree, add in those missing from dataframe
+abritamr<- left_join(sample_names, abritamr)
+```
+
+```{r}
+abritamr_class_long <- abritamr %>%
+        pivot_longer(cols = -name, names_to = "resistance", values_to = 'value') %>%
+        separate_rows(resistance, sep = "/") %>%
+        mutate(genes = value) %>% 
+        separate_rows(genes, sep = ",") %>%
+        #mutate(genes = str_replace(genes, "\\*","")) %>%
+        group_by(resistance) %>% 
+        #mutate(genes = str_replace(genes, "_[A-Z][0-9]+[A-Z]+$", "")) %>% 
+        #mutate(genes = str_replace(genes, "-?[0-9]+$", "")) %>% 
+        mutate(gene_cat = paste0(sort(unique(genes)), collapse = ",")) %>%
+        ungroup()
+
+refgenes_beta_lactamase <- read_delim("delims/refgenes_beta-lactamase.tsv", 
+                                      delim = "\t", escape_double = FALSE, 
+                                      trim_ws = TRUE)
+
+refgenes_beta_lactamase <- refgenes_beta_lactamase %>% mutate(genes = if_else(is.na(`#Allele`), `Gene family`, `#Allele`))
+
+
+ESBL_categorisation <- abritamr_class_long %>%
+        select(genes) %>%
+        unique() %>%
+        filter(grepl("bla", genes)) %>%
+  left_join(refgenes_beta_lactamase, by = "genes") %>%
+        arrange(genes) %>%
+        select(genes, Subclass) %>%
+        mutate(Subclass = if_else(grepl('CTX', genes), "CEPHALOSPORIN", Subclass)) %>%
+        mutate(Subclass = if_else(is.na(Subclass), "BETA-LACTAM", Subclass))
+
+abritamr_class_long <- abritamr_class_long %>%
+        left_join(ESBL_categorisation, by = 'genes') %>%
+        mutate(Curated_Class = resistance) %>%
+        mutate(Curated_Class = case_when(resistance %in% c("Amikacin",
+                                                           "Aminoglycosides (Ribosomal methyltransferase)",
+                                                           "Other aminoglycoside resistance (non-RMT)",
+                                                           "Gentamicin",
+                                                           "Rifampin",
+                                                           "Rifamycin",
+                                                           "Apramycin",
+                                                           "Kanamycin",
+                                                           "Tobramycin",
+                                                           "Streptomycin")~ "Aminoglycosides",
+                                         resistance %in% c("Florfenicol", "Chloramphenicol", "Phenicol") ~ "Phenicols",
+                                         resistance == "Aztreonam" ~ "Monobactam",
+                                         resistance %in% c("Ampicillin","Beta-lactamase (narrow-spectrum)") ~ "BETA-LACTAM",
+                                         .default = Curated_Class)) %>%
+        mutate(Curated_Class = if_else(!is.na(Subclass), Subclass, Curated_Class)) %>%
+        mutate(Curated_Class = tolower(Curated_Class)) %>%
+        mutate(Curated_Class = if_else(str_detect(genes, "_"), paste0(Curated_Class, " SNPs"), Curated_Class))
+
+
+
+#Need to check rifamycin and rifampin and aggregate them into a class
+
+#break()
+
+
+abritamr_class_long %>% select(resistance, genes, Curated_Class, Subclass) %>% filter(!is.na(genes)) %>% unique() %>% View()
+
+abritamr_class_long <- abritamr_class_long %>% 
+        #In all columns, replace NA with 0 and anything else with 1
+        mutate(value = ifelse(is.na(value), 0, 1)) %>%
+        group_by(name, Curated_Class) %>%
+        mutate(value = sum(value)) %>%
+        mutate(value = if_else(value > 0, 1, 0)) %>%
+        select(name, Curated_Class, value) %>%
+        unique() %>%
+        ungroup() %>% 
+        filter(complete.cases(.))
+
+source_abritamr_class_long <- small_meta %>% select(name, Revised_Source_Niche, `Count of Source`) %>% full_join(abritamr_class_long, by = 'name')
+```
+
+```{r}
+
+source_abritamr_class_long %>%
+  group_by(Revised_Source_Niche, Curated_Class) %>%
+  mutate(count = n()) %>%
+  ungroup() %>%
+  group_by(Revised_Source_Niche) %>%
+  mutate(
+    percent = (count / `Count of Source`) * 100
+  ) %>%
+        ggplot(aes(x = Curated_Class, y = percent, fill = Revised_Source_Niche)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "Grouped Bar Chart Showing Percentages",
+    x = "Category",
+    y = "Percentage (%)",
+    fill = "Group"
+  ) +
+  scale_y_continuous(labels = scales::percent_format(scale = 1)) +
+  theme_minimal() +
+        theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)
+  ) + scale_fill_manual(values = source_cols)
+
+
+```
+
+
+```{r}
+library(tidyHeatmap)
+
+abritamr_class_long |>
+        heatmap(.column = `name`,
+                .row = `Curated_Class`,
+                .value = `value`,
+                palette_value = c("white", "blue", "red"))
+```
+
+
+```{r}
+CIA_classes <- c('Carbapenemase',
+                 'Colistin',
+                 'Amikacin',
+                 'Aminoglycosides (Ribosomal methyltransferase)',
+                 'Kanamycin',
+                 'Streptomycin',
+                 'Rifamycin',
+                 'Rifampicin',
+                 'Ampicillin',
+                 'Aztreonam',
+                 'Apramycin',
+                 'Carbapenemase (MBL)',
+                 'Fosfomycin',
+                 'Gentamycin',
+                 'Other aminoglycoside resistance (non-RMT)',
+                 'Tobramycin')
+
+HP_CIA_classes <- c('Macrolide',
+                    'ESBL',
+                    'Quinolone')
+
+abritamr_class_long <- abritamr_class_long %>%
+  mutate(Antibiotic_class_status = case_when(
+    resistance %in% HP_CIA_classes ~ "HP-CIA",
+    resistance %in% CIA_classes ~ "CIA",
+    !resistance %in% c(CIA_classes, HP_CIA_classes) ~ "IA"))
+
+```
+
+
+```{r}
+library(tidyHeatmap)
+
+sourcewise_res_class <- small_meta %>% left_join(abritamr_class_long, by = 'name') %>%
+        unique() %>% 
+        group_by(name) %>%
+        mutate(ARG_Count = sum(value)) %>%
+        ungroup() %>%
+        filter(resistance != "Efflux") %>% 
+        group_by(Revised_Source_Niche, resistance) %>%
+        mutate(class_res_count = sum(value)/`Count of Source`) %>%
+        ungroup() %>%
+        #Remove resistance categories where value sums to zero
+        group_by(resistance) |>
+        filter(sum(class_res_count) > 0) |>
+        ungroup() %>%
+        group_by(Revised_Source_Niche) %>%
+        mutate(`Mean Resistance Class Count` = sum(value)/`Count of Source`) %>%
+        ungroup() |>
+        arrange(desc(Antibiotic_class_status)) |>
+        rename("Antibiotic Class Status" = Antibiotic_class_status,
+               "Proportion Resistant" = class_res_count,
+               "Resistance Class"= resistance,
+               "Source Niche" = Revised_Source_Niche
+               ) |>
+        heatmap(.column = `Source Niche`,
+                .row = `Resistance Class`,
+                .value = `Proportion Resistant`,
+                palette_value = c("white", "blue", "red")) |>
+        add_tile(`Antibiotic Class Status`, palette = c("orange", 'yellow', 'red'))  |>
+        add_tile(`Mean Resistance Class Count`, palette = c("white", "blue", "red"))
+
+        
+```
+
+```{r}
+# Create a list of unwanted phylogroups for later filtering
+unwanted_phylos <- c("cladeI", "cladeIII", "cladeIV", 'Unknown', 'E or cladeI')
+
+phylogroupwise_res_class <- small_meta %>%
+        left_join(abritamr_class_long, by = 'name') %>%
+        unique() %>% 
+        filter(Consensus_phylogroup %nin% unwanted_phylos) %>% 
+        group_by(name) %>%
+        mutate(ARG_Count = sum(value)) %>%
+        ungroup() %>%
+        filter(resistance != "Efflux") %>% 
+        group_by(Consensus_phylogroup, resistance) %>%
+        mutate(class_res_count = sum(value)/`Count of Phylogroup`) %>%
+        ungroup() %>%
+        #Remove resistance categories where value sums to zero
+        group_by(resistance) |>
+        filter(sum(class_res_count) > 0) |>
+        ungroup() %>%
+        group_by(Consensus_phylogroup) %>%
+        mutate(`Mean Resistance Class Count` = sum(value)/`Count of Phylogroup`) %>%
+        ungroup() |>
+        arrange(desc(Antibiotic_class_status)) |>
+        rename("Antibiotic Class Status" = Antibiotic_class_status,
+               "Proportion Resistant" = class_res_count,
+               "Resistance Class"= resistance,
+               "Phylogroup" = Consensus_phylogroup
+               ) |>
+        heatmap(.column = `Phylogroup`,
+                .row = `Resistance Class`,
+                .value = `Proportion Resistant`,
+                palette_value = c("white", "blue", "red")) |>
+        add_tile(`Antibiotic Class Status`, palette = c("orange", 'yellow', 'red'))  |>
+        add_tile(`Mean Resistance Class Count`, palette = c("white", "blue", "red"))
+```
+
+
+```{r}
+#Take a small sample of our dataset for testing
+
+set.seed(1)
+
+#abritamr <- abritamr %>% slice_sample(n = 100)
+```
+
+```{r}
+abritamr_long <- abritamr %>%
+        pivot_longer(cols = -name, names_to = "resistance", values_to = "gene") %>%
+        separate_rows(gene, sep = ",") %>% mutate(Present = 1)
+
+abritamr_long <- abritamr_long %>% filter(!is.na(gene)) %>% unique()
+
+res_gene <- abritamr_long %>% select(resistance, gene) %>% unique()
+
+abritamr_long <- left_join(small_meta, abritamr_long)
+
+abritamr_long <- abritamr_long %>% filter(!is.na(gene)) %>% filter(gene != "NA")
+
+
+abritamr_long %>%
+        group_by(gene) %>% 
+        add_count() %>% 
+        filter(n > 20) %>%
+        select(-n) %>% 
+    group_by(name, gene) %>%
+        mutate(gene = str_replace(gene, "\\*","")) %>% 
+    slice_head(n = 1) %>%
+    group_by(Revised_Source_Niche, gene) %>%
+    reframe(Count = sum(Present)/`Count of Source`) %>%
+    unique() %>%
+    pivot_wider(names_from = "gene", values_from = "Count")  %>%
+    column_to_rownames('Revised_Source_Niche') %>%
+        replace(is.na(.), 0) %>%
+    pheatmap()
+        
+
+
+        
+        
+
+
+```
+
