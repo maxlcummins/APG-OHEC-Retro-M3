@@ -1896,6 +1896,13 @@ HyPEC_tree_plot +
 ```
 
 ```{r}
+
+# Unzip the cgMLST distances if the unzipped version doesnt exist
+if (!file.exists("analysis/cgMLST_dists_5471.txt")) {
+    system("gunzip analysis/cgMLST_dists_5471.txt.gz")
+}
+
+
 # Read in the cgMLST distances
 cgMLST_dists <- read_delim("analysis/cgMLST_dists_5471.txt", delim = "\t")
 
