@@ -1,0 +1,391 @@
+## Analysis summaries and tables
+
+
+
+```{r}
+library(tidyverse)
+
+# ----------------------------
+# 1) Build isolate-level pathotype presence
+#    (restricted to potential hybrid pathogens)
+# ----------------------------
+iso_pathotypes <- focused_VFs %>%
+  filter(
+    name %in% potential_hybrids$name,
+    Present == 1
+  ) %>%
+  select(name, ST_new, Consensus_phylogroup, pathotype, GENE) %>%
+  distinct()
+
+iso_pathotype_binary <- iso_pathotypes %>%
+  group_by(name, ST_new, Consensus_phylogroup, pathotype) %>%
+  summarise(present = 1, .groups = "drop")
+
+iso_pathotype_wide <- iso_pathotype_binary %>%
+  pivot_wider(
+    names_from  = pathotype,
+    values_from = present,
+    values_fill = 0
+  )
+
+
+hpi_marker_columns <- paste0(
+  "ABRICATE..vfdb_",
+  c("fyuA/psn", "irp1", "irp2", "ybtA", "ybtE", "ybtP", "ybtQ", "ybtS", "ybtT", "ybtU", "ybtX")
+)
+
+iso_gene_flags <- genometa %>%
+  filter(name %in% potential_hybrids$name) %>%
+  transmute(
+    name,
+
+    # ColV marker (already binary)
+    ColV = as.integer(ColV == 1),
+
+    # senB (VFDB)
+    senB = as.integer(ABRICATE..vfdb_senB == 1),
+    
+    # HPI: all eleven markers used in the manuscript results.
+    HPI = as.integer(if_all(all_of(hpi_marker_columns), ~ .x == 1)),
+    
+    # stx (VFDB)
+    stx = as.integer(ABRICATE..vfdb_stx1A == 1
+                      | ABRICATE..vfdb_stx1B == 1
+                      | ABRICATE..vfdb_stx2A == 1
+                      | ABRICATE..vfdb_stx2B == 1
+                      | ABRICATE..vfdb_stxA == 1),
+    # intI1 (VFDB)
+    intI1 = as.integer(ABRICATE..EC_custom_intI1_HQ730118.1)
+  )
+
+iso_gene_flags_amr <-
+        amrfinder %>%
+        filter(name %in% potential_hybrids$name) %>%
+        filter(Scope == "core" & `Element type` == "AMR" & `Element subtype` == "AMR") %>%
+        select(name, `Gene symbol`, Class, Subclass) %>%
+        mutate(CIA = if_else(`Gene symbol` %in% ARGs_of_interest | Subclass %in% c("CARBAPENEM", "CEPHALOSPORIN"), 1, 0))
+
+iso_amr_summary <- iso_gene_flags_amr %>%
+  group_by(name) %>%
+  summarise(
+    any_AMR = 1L,                                  # has >=1 AMR call
+    CIA     = as.integer(any(CIA == 1L)),           # has >=1 clinically important ARG
+    n_AMR   = n_distinct(`Gene symbol`),            # AMR gene count
+    n_classes = n_distinct(Class),                  # AMR class count
+    MDR     = as.integer(n_distinct(Class) >= 3),   # MDR threshold
+    .groups = "drop"
+  )
+
+iso_pathotype_wide <- iso_pathotype_wide %>%
+  left_join(iso_gene_flags, by = "name")
+
+iso_pathotype_wide <- iso_pathotype_wide %>%
+  left_join(iso_amr_summary, by = "name") %>%
+  mutate(
+    any_AMR  = replace_na(any_AMR, 0L),
+    CIA      = replace_na(CIA, 0L),
+    MDR      = replace_na(MDR, 0L),
+    n_AMR    = replace_na(n_AMR, 0L),
+    n_classes = replace_na(n_classes, 0L)
+  )
+
+# Helper: safely compute % for a possibly-missing pathotype column
+pct_col <- function(data, col) {
+  if (col %in% names(data)) mean(data[[col]] == 1, na.rm = TRUE) * 100 else 0
+}
+
+fmt_mean_sd <- function(x) {
+  if (length(x[!is.na(x)]) > 1) {
+    sprintf("%.1f ± %.1f", mean(x, na.rm = TRUE), sd(x, na.rm = TRUE))
+  } else {
+    sprintf("%.1f", mean(x, na.rm = TRUE))
+  }
+}
+
+# ----------------------------
+# 3) Summarise at ST level
+#    (UPEC instead of ExPEC-like; includes NMEC)
+# ----------------------------
+# ---- 3) Add compact AMR columns to the ST summary (percentages)
+st_summary <- iso_pathotype_wide %>%
+  filter(!is.na(ST_new)) %>%
+  group_by(ST_new) %>%
+  summarise(
+    n = n(),
+    Phylogroup = first(Consensus_phylogroup),
+
+    `ColV (%)`  = mean(ColV == 1, na.rm = TRUE) * 100,
+    `senB (%)`  = mean(senB == 1, na.rm = TRUE) * 100,
+    `HPI (%)`   = mean(HPI == 1, na.rm = TRUE) * 100,
+    `stx (%)`   = mean(stx == 1, na.rm = TRUE) * 100,
+
+    `UPEC (%)` = if ("UPEC" %in% names(.)) mean(UPEC == 1, na.rm = TRUE) * 100 else 0,
+    `NMEC (%)` = if ("NMEC" %in% names(.)) mean(NMEC == 1, na.rm = TRUE) * 100 else 0,
+    `EPEC (%)` = if ("EPEC" %in% names(.)) mean(EPEC == 1, na.rm = TRUE) * 100 else 0,
+    `EAEC (%)` = if ("EAEC" %in% names(.)) mean(EAEC == 1, na.rm = TRUE) * 100 else 0,
+    `EIEC (%)` = if ("EIEC" %in% names(.)) mean(EIEC == 1, na.rm = TRUE) * 100 else 0,
+    `ETEC (%)` = if ("ETEC" %in% names(.)) mean(ETEC == 1, na.rm = TRUE) * 100 else 0,
+    `DAEC (%)` = if ("DAEC" %in% names(.)) mean(DAEC == 1, na.rm = TRUE) * 100 else 0,
+    `EHEC (%)` = if ("EHEC" %in% names(.)) mean(EHEC == 1, na.rm = TRUE) * 100 else 0,
+
+        # --- AMR
+        `AMR genes` = fmt_mean_sd(n_AMR),
+        `AMR classes` = fmt_mean_sd(n_classes),
+            
+        `intI1 (%)` = mean(intI1 == 1, na.rm = TRUE) * 100,
+        `MDR (%)`   = mean(MDR == 1, na.rm = TRUE) * 100,
+        `CIA (%)`   = mean(CIA == 1, na.rm = TRUE) * 100
+
+
+  ) %>%
+  rename(ST = ST_new, Count = n) %>%
+  ungroup() %>%
+  mutate(
+    across(
+      ends_with("(%)"),
+      ~ round(.x, 1)
+    )
+  )
+
+# ----------------------------
+# 4) Identify top 10 hybrid STs
+# ----------------------------
+# Top 10 STs by isolate count
+top10_sts <- st_summary %>%
+  arrange(desc(Count)) %>%
+  slice_head(n = 10)
+
+# Any additional STs with stx > 0% (but not already in top 10)
+extra_stx_sts <- st_summary %>%
+  filter(`stx (%)` > 0) %>%
+  filter(!ST %in% top10_sts$ST) %>%
+  arrange(desc(`stx (%)`), desc(Count))
+
+# Combine
+st_summary_top10_plus_stx <- bind_rows(top10_sts, extra_stx_sts)
+
+readr::write_csv(st_summary_top10_plus_stx, figure_path("Table_1_regenerated.csv"))
+
+st_summary_top10_plus_stx
+```
+
+```{r}
+cohort_amr_summary <- amrfinder %>%
+        filter(Scope == "core",
+               `Element type` == "AMR",
+               `Element subtype` == "AMR") %>%
+        select(name, `Gene symbol`, Class, Subclass) %>%
+        mutate(
+                CIA = if_else(
+                        `Gene symbol` %in% ARGs_of_interest |
+                                Subclass %in% c("CARBAPENEM","CEPHALOSPORIN"),
+                        1L,
+                        0L
+                )
+        ) %>%
+        group_by(name) %>%
+        summarise(
+                any_AMR = 1L,
+                CIA = as.integer(any(CIA == 1L)),
+                n_AMR = n_distinct(`Gene symbol`),
+                n_classes = n_distinct(Class),
+                MDR = as.integer(n_distinct(Class) >= 3),
+                .groups = "drop"
+        ) %>%
+        right_join(sample_names, by = "name") %>%
+        mutate(
+                any_AMR = replace_na(any_AMR, 0L),
+                CIA = replace_na(CIA, 0L),
+                MDR = replace_na(MDR, 0L),
+                n_AMR = replace_na(n_AMR, 0L),
+                n_classes = replace_na(n_classes, 0L)
+        ) %>%
+        left_join(genometa %>%
+                          select(name, Revised_Source_Niche, ST_new, Consensus_phylogroup),
+                  by = "name")
+
+cohort_amr_summary %>%
+        summarise(
+                n = n(),
+                MDR_n = sum(MDR),
+                MDR_percent = round(100 * mean(MDR), 2),
+                CIA_n = sum(CIA),
+                CIA_percent = round(100 * mean(CIA), 2),
+                MDR_CIA_n = sum(MDR == 1 & CIA == 1),
+                MDR_CIA_percent = round(100 * mean(MDR == 1 & CIA == 1), digits = 2)
+        )
+
+source("R/05_supplementary_table.R", local = TRUE)
+
+```
+
+```{r}
+cia_gene_counts_wide_with_total <- {
+  
+  cia_gene_source_table <- amrfinder %>%
+    filter(
+      Scope == "core",
+      `Element type` == "AMR",
+      `Element subtype` == "AMR"
+    ) %>%
+    select(name, `Gene symbol`, Class, Subclass) %>%
+    mutate(
+      CIA = if_else(
+        `Gene symbol` %in% ARGs_of_interest |
+          Subclass %in% c("CARBAPENEM", "CEPHALOSPORIN"),
+        1L,
+        0L
+      )
+    ) %>%
+    filter(CIA == 1) %>%
+    distinct(name, `Gene symbol`, Class, Subclass) %>%
+    left_join(
+      genometa %>%
+        select(name, Revised_Source_Niche),
+      by = "name"
+    )
+  
+  source_totals <- genometa %>%
+    filter(name %in% sample_names$name) %>%
+    count(Revised_Source_Niche, name = "source_total")
+  
+  gene_total_counts <- cia_gene_source_table %>%
+    distinct(name, Class, Subclass, `Gene symbol`) %>%
+    count(Class, Subclass, `Gene symbol`, name = "total_count")
+  
+  cia_gene_source_table_grouped <- cia_gene_source_table %>%
+    left_join(
+      gene_total_counts,
+      by = c("Class", "Subclass", "Gene symbol")
+    ) %>%
+    mutate(
+      `Gene symbol` = if_else(
+        total_count < 3,
+        "Other rare genes (<3 genomes total)",
+        `Gene symbol`
+      )
+    ) %>%
+    select(-total_count) %>%
+    distinct(name, Class, Subclass, `Gene symbol`, Revised_Source_Niche)
+  
+  cia_gene_counts_wide <- cia_gene_source_table_grouped %>%
+    count(Class, Subclass, `Gene symbol`, Revised_Source_Niche, name = "count") %>%
+    left_join(source_totals, by = "Revised_Source_Niche") %>%
+    mutate(
+      percent = round(100 * count / source_total, 1),
+      cell = paste0(count, " (", percent, "%)")
+    ) %>%
+    select(Class, Subclass, `Gene symbol`, Revised_Source_Niche, cell) %>%
+    complete(
+      nesting(Class, Subclass, `Gene symbol`),
+      Revised_Source_Niche,
+      fill = list(cell = "0 (0%)")
+    ) %>%
+    pivot_wider(
+      names_from = Revised_Source_Niche,
+      values_from = cell
+    ) %>%
+    arrange(
+      Class,
+      Subclass,
+      `Gene symbol` == "Other rare genes (<3 genomes total)",
+      `Gene symbol`
+    )
+  
+  cia_source_total_row <- cia_gene_source_table %>%
+    distinct(name, Revised_Source_Niche) %>%
+    count(Revised_Source_Niche, name = "count") %>%
+    left_join(source_totals, by = "Revised_Source_Niche") %>%
+    mutate(
+      percent = round(100 * count / source_total, 1),
+      cell = paste0(count, " (", percent, "%)")
+    ) %>%
+    select(Revised_Source_Niche, cell) %>%
+    complete(
+      Revised_Source_Niche,
+      fill = list(cell = "0 (0%)")
+    ) %>%
+    pivot_wider(
+      names_from = Revised_Source_Niche,
+      values_from = cell
+    ) %>%
+    mutate(
+      Class = "Total",
+      Subclass = "Total",
+      `Gene symbol` = "Total CIA-positive genomes"
+    ) %>%
+    select(Class, Subclass, `Gene symbol`, everything())
+  
+  bind_rows(
+    cia_gene_counts_wide,
+    cia_source_total_row
+  )
+}
+
+readr::write_csv(cia_gene_counts_wide_with_total, figure_path("Table_2_regenerated.csv"))
+
+cia_gene_counts_wide_with_total
+```
+```{r}
+
+expec_summary <- genometa %>%
+  rowwise() %>%
+  mutate(
+    afa_dra = any(c_across(matches("EC_custom_afaE-[13]|vfdb_dra[BC]$")) == 1, na.rm = TRUE),
+    iutA    = any(c_across(matches("colV_zoetis_iutA$|EC_custom_iutA_|vfdb_iutA$")) == 1, na.rm = TRUE),
+    kpsMII  = any(c_across(matches("EC_custom_kpsMT.*II")) == 1, na.rm = TRUE),
+    pap     = any(c_across(matches("EC_custom_pap[ACH]_|vfdb_pap[ACH]$")) == 1, na.rm = TRUE),
+    sfa_foc = any(c_across(matches("vfdb_(sfa[DE]|focD)$")) == 1, na.rm = TRUE),
+    expec_markers = sum(c_across(afa_dra:sfa_foc)),
+    ExPEC = expec_markers >= 2
+  ) %>%
+  ungroup() %>%
+  summarise(
+    total = n(),
+    ExPEC_n = sum(ExPEC),
+    ExPEC_percent = round(100 * mean(ExPEC), 1)
+  )
+
+expec_summary
+
+# Total number of isolates within each source niche
+niche_totals <- genometa %>%
+  distinct(name, Revised_Source_Niche) %>%
+  count(Revised_Source_Niche, name = "n_total")
+
+amrfinder <- amrfinder %>% filter(name %in% genometa$name)
+
+# One source assignment per isolate
+source_metadata <- genometa %>%
+  distinct(name, Revised_Source_Niche)
+
+# Denominator: all isolates in each source niche
+source_totals <- source_metadata %>%
+  count(Revised_Source_Niche, name = "total_isolates")
+
+# Numerator: isolates carrying at least one established QRDR substitution
+qrdr_by_source <- amrfinder %>%
+  filter(
+    `Element subtype` == "POINT",
+    `Gene symbol` %in% established_qrdr
+  ) %>%
+  distinct(name) %>%
+  inner_join(source_metadata, by = "name") %>%
+  count(Revised_Source_Niche, name = "qrdr_positive") %>%
+  right_join(source_totals, by = "Revised_Source_Niche") %>%
+  mutate(
+    qrdr_positive = replace_na(qrdr_positive, 0L),
+    percent = 100 * qrdr_positive / total_isolates,
+    result = sprintf(
+      "%d/%d (%.2f%%)",
+      qrdr_positive,
+      total_isolates,
+      percent
+    )
+  ) %>%
+  arrange(Revised_Source_Niche)
+
+qrdr_by_source
+
+
+``` 

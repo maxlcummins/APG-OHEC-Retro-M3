@@ -1,0 +1,662 @@
+## Classwise AMR - Figure 2A
+
+```{r}
+# For Figure 2A, retain only established QRDR substitutions among
+# quinolone point-mutation calls; keep other AMR classes unchanged.
+amrfinder_class_wise_figure_2a <- amrfinder %>%
+        filter(!(`Element subtype` == "POINT" & Class == "QUINOLONE" &
+                 !(`Gene symbol` %in% established_qrdr))) %>%
+        dplyr::select(name, `Element type`, `Element subtype`, Reported_Class, Present) %>%
+        separate_rows(Reported_Class, sep = "/") %>%
+        distinct()
+
+# Compute the number of genomes from a given source which carry 1 or more genes from a given class of antibiotic
+amr_class_prev_by_source <- amrfinder_class_wise_figure_2a %>%
+        # Filter for the desired Element type                        
+        filter(`Element type` == "AMR") %>%
+
+        # Join with 'name_source_phylo' on 'name'
+        left_join(name_source_phylo, by = 'name') %>%
+        
+        # Group by Revised_Source_Niche and Reported_Class, then count occurrences
+        select(name, Revised_Source_Niche, `Count of Source`, Reported_Class) %>%
+                
+        # Group by Revised_Source_Niche and Reported_Class, then count occurrences
+        group_by(Revised_Source_Niche, Reported_Class) %>%
+        summarise(count = n(), .groups = 'drop') %>%
+        
+        # Ensure all combinations of Revised_Source_Niche and Reported_Class are present
+        complete(Revised_Source_Niche, Reported_Class, fill = list(count = 0)) %>%
+
+        # Join with 'name_source_phylo' on 'name'
+        left_join(source_counts_df, by = 'Revised_Source_Niche', relationship = 'many-to-many')
+
+# Generate totals across all sources
+ total_amr_class_prev_by_source <- amrfinder_class_wise_figure_2a %>%
+          # Filter for the desired Element type                        
+         filter(`Element type` == "AMR") %>%
+         group_by(Reported_Class) %>%
+         summarise(Revised_Source_Niche = "Total", count = n(), `Count of Source` = nrow(sample_names))
+
+#Bind totals to our amr_class_prev_by_source
+amr_class_prev_by_source <- bind_rows(amr_class_prev_by_source, total_amr_class_prev_by_source)
+ 
+# Calculate the percentage within each Revised_Source_Niche
+amr_class_prev_by_source <- amr_class_prev_by_source %>%
+        group_by(Revised_Source_Niche) %>%
+        mutate(percent = (count / `Count of Source`) * 100) %>%
+        ungroup()
+
+#Generate figure 2
+Figure_2A <- amr_class_prev_by_source %>%
+
+        # Create the ggplot
+        ggplot(aes(x = Reported_Class, y = percent, fill = Revised_Source_Niche)) +
+        geom_col(position = "dodge") +
+        labs(
+                x = "AMR Class",
+                y = "Percentage (%)",
+                fill = "Source Niche"
+        ) +
+        scale_y_continuous(labels = percent_format(scale = 1)) +
+        theme_minimal() +
+        theme(
+                axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)
+        ) +
+        scale_fill_manual(values = source_cols_w_total)
+
+# Save to file
+ggsave(figure_path("Figure_5_resistance_classes.pdf"), Figure_2A, width = 8.27, height = 11.69/3, dpi = 300, device='pdf')
+
+Figure_2A
+
+```
+
+# Sourcewise AMR Prevalence
+
+```{r}
+
+source_wise_class_wise_AMR <- amrfinder_class_wise %>%
+        full_join(sample_names, by = 'name') %>%
+        complete(name, `Element type`, `Element subtype`, Reported_Class, fill = list(Present = 0)) %>%
+        filter(paste(`Element type`, `Element subtype`, Reported_Class) %in% paste(amrfinder_class_wise$`Element type`, amrfinder_class_wise$`Element subtype`, amrfinder_class_wise$Reported_Class)) %>%
+        left_join(name_source)
+
+source_wise_class_wise_AMR
+
+
+# Focus on one antibiotic class of interest
+class_of_interest <- "MACROLIDE"
+subset_df <- subset(source_wise_class_wise_AMR, Reported_Class == class_of_interest)
+
+# Create a contingency table: rows = source, columns = presence
+cont_table <- table(subset_df$Revised_Source_Niche, subset_df$Present)
+
+
+# Check expected counts using Chi-square test's expected values
+chi_test_prep <- suppressWarnings(chisq.test(cont_table, correct = FALSE)) # to get expected counts
+expected_counts <- chi_test_prep$expected
+
+# Display the contingency and expected counts
+print(cont_table)
+print(expected_counts)
+
+# Check whether all expected counts are >= 5
+if (all(expected_counts >= 5)) {
+  # Assumptions for Chi-square test are reasonably met
+  chi_test <- chisq.test(cont_table)
+  print("Using Chi-square test as all expected counts are >= 5:")
+  print(chi_test)
+  
+  # Create a contingency table for presence=1
+  presence_table <- table(subset_df$Revised_Source_Niche, subset_df$Present)
+  # Extract counts for presence=1
+  counts_present <- presence_table[, "1"]
+  # Extract total counts per source
+  total_counts <- rowSums(presence_table)
+  # Perform pairwise proportion tests
+  pairwise_tests <- pairwise.prop.test(counts_present, total_counts, 
+
+  p.adjust.method = "bonferroni")
+  # View results
+  print(pairwise_tests)
+  
+} else {
+  # Some expected counts are low, use Fisher's exact test
+  fisher_test <- fisher.test(cont_table)
+  print("Using Fisher's exact test due to low expected counts:")
+  print(fisher_test)
+}
+
+
+
+
+```
+
+
+
+# Stress - Figure 2B
+
+```{r}
+# Compute the number of genomes from a given source which carry 1 or more genes from a given class of antibiotic
+stress_class_prev_by_source <- amrfinder_class_wise %>%
+        # Filter for the desired Element type                        
+        filter(`Element type` == "STRESS") %>%
+
+        # Join with 'name_source_phylo' on 'name'
+        left_join(name_source_phylo, by = 'name') %>%
+        
+        # Group by Revised_Source_Niche and Reported_Class, then count occurrences
+        select(name, Revised_Source_Niche, `Count of Source`, Reported_Class) %>%
+                
+        # Group by Revised_Source_Niche and Reported_Class, then count occurrences
+        group_by(Revised_Source_Niche, Reported_Class) %>%
+        summarise(count = n(), .groups = 'drop') %>%
+        
+        # Ensure all combinations of Revised_Source_Niche and Reported_Class are present
+        complete(Revised_Source_Niche, Reported_Class, fill = list(count = 0)) %>%
+
+        # Join with 'name_source_phylo' on 'name'
+        left_join(source_counts_df, by = 'Revised_Source_Niche', relationship = 'many-to-many')
+
+# Generate totals across all sources
+ total_stress_class_prev_by_source <- amrfinder_class_wise %>%
+          # Filter for the desired Element type                        
+         filter(`Element type` == "STRESS") %>%
+         group_by(Reported_Class) %>%
+         summarise(Revised_Source_Niche = "Total", count = n(), `Count of Source` = nrow(sample_names))
+
+#Bind totals to our stress_class_prev_by_source
+stress_class_prev_by_source <- bind_rows(stress_class_prev_by_source, total_stress_class_prev_by_source)
+ 
+# Calculate the percentage within each Revised_Source_Niche
+stress_class_prev_by_source <- stress_class_prev_by_source %>%
+        group_by(Revised_Source_Niche) %>%
+        mutate(percent = (count / `Count of Source`) * 100) %>%
+        ungroup() %>%
+        # Add in our source counts again
+        mutate(`Count of Source` = replace_na(max(`Count of Source`, na.rm = TRUE), 0)) %>%
+        # Add in our source counts again
+        mutate(percent = replace_na(percent, 0))
+
+#Generate Figure 2B
+Figure_2B <- stress_class_prev_by_source %>%
+        
+        # Reorder fill order
+        mutate(Revised_Source_Niche = factor(Revised_Source_Niche, levels = c(unique(Revised_Source_Niche)))) %>%
+
+        # Create the ggplot
+        ggplot(aes(x = Reported_Class, y = percent, fill = Revised_Source_Niche)) +
+        geom_col(position = "dodge") +
+        labs(
+                x = "Stress Gene Class",
+                y = "Percentage (%)",
+                fill = "Source Niche"
+        ) +
+        scale_y_continuous(labels = percent_format(scale = 1), limits = c(0, 100)) +
+        theme_minimal() +
+        theme(
+                axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)
+        ) +
+        scale_fill_manual(values = source_cols_w_total)
+
+
+```
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(rstatix)
+
+# Prepare the data: Count of Count_of_stress_elements elements per genome and source niche
+genome_by_stress_gene_count_and_source <- amrfinder %>%
+        # Filter for the desired Element type                        
+        filter(`Element type` == "STRESS") %>%
+        # Join with metadata
+        left_join(small_meta, by = 'name') %>%
+        # Rename our gene column
+        rename("GENE" =`Gene symbol`) %>%
+        # Convert Revised_Source_Niche to a character
+        mutate(Revised_Source_Niche = as.character(Revised_Source_Niche)) %>%
+        # Select relevant columns
+        select(name, GENE, Revised_Source_Niche) %>%
+        # Group by genome name and source niche
+        group_by(name, Revised_Source_Niche) %>%
+        # Count the number of stress elements per group
+        summarise(Count_of_stress_elements = n(), .groups = 'drop') %>%
+        ungroup() %>%
+        full_join(name_source) %>%
+        mutate(Count_of_stress_elements = replace_na(Count_of_stress_elements, 0))
+
+# Check normality using Shapiro-Wilk test
+normality_checks <- genome_by_stress_gene_count_and_source %>%
+        group_by(Revised_Source_Niche) %>%
+        shapiro_test(Count_of_stress_elements)
+
+print("Shapiro-Wilk Normality Test Results:")
+print(normality_checks)
+
+# Check homogeneity of variances using Levene's test
+variance_check <- genome_by_stress_gene_count_and_source %>%
+        levene_test(Count_of_stress_elements ~ Revised_Source_Niche)
+
+print("Levene's Test for Homogeneity of Variances:")
+print(variance_check)
+
+```
+
+
+```{r}
+
+overall_median <- genome_by_stress_gene_count_and_source %>% pull(Count_of_stress_elements) %>% median()
+overall_mean <- genome_by_stress_gene_count_and_source %>% pull(Count_of_stress_elements) %>% mean()
+
+
+# Perform tests and store p-values
+test_results <- genome_by_stress_gene_count_and_source %>%
+  group_by(Revised_Source_Niche) %>%
+  summarize(
+          
+    minimum = min(Count_of_stress_elements),
+    median = median(Count_of_stress_elements),
+    mean = mean(Count_of_stress_elements),
+    max = max(Count_of_stress_elements),
+    iqr = IQR(Count_of_stress_elements),
+    p_value = wilcox.test(Count_of_stress_elements, mu = overall_median, alternative = "two.sided")$p.value
+  ) 
+    
+
+# Adjust p-values using Bonferroni correction
+test_results <- test_results %>%
+  mutate(`p.adj` = p.adjust(p_value, method = "bonferroni")) %>%
+        add_significance(p.col = "p.adj") %>%
+        mutate(string_for_paper = paste0(
+                "(min: ", minimum, "; ",
+                "median: ", median, "; ",
+                "mean: ", mean, "; ",
+                "max: ", max, "; ",
+                "p-value: ", `p.adj`, ")"))
+
+print(test_results)
+```
+
+
+## Metal resistance only
+```{r}
+
+# Prepare the data: Count of Count_of_metal_elements elements per genome and source niche
+genome_by_metal_gene_count_and_source <- amrfinder %>%
+        # Filter for the desired Element type                        
+        filter(`Element subtype` == "METAL") %>%
+        # Join with metadata
+        left_join(small_meta, by = 'name') %>%
+        # Rename our gene column
+        rename("GENE" =`Gene symbol`) %>%
+        # Convert Revised_Source_Niche to a character
+        mutate(Revised_Source_Niche = as.character(Revised_Source_Niche)) %>%
+        # Select relevant columns
+        select(name, GENE, Revised_Source_Niche) %>%
+        # Group by genome name and source niche
+        group_by(name, Revised_Source_Niche) %>%
+        # Count the number of metal elements per group
+        summarise(Count_of_metal_elements = n(), .groups = 'drop') %>%
+        ungroup() %>%
+        full_join(name_source) %>%
+        mutate(Count_of_metal_elements = replace_na(Count_of_metal_elements, 0))
+
+overall_median <- genome_by_metal_gene_count_and_source %>% pull(Count_of_metal_elements) %>% median()
+overall_mean <- genome_by_metal_gene_count_and_source %>% pull(Count_of_metal_elements) %>% mean()
+
+
+# Perform tests and store p-values
+test_results <- genome_by_metal_gene_count_and_source %>%
+  group_by(Revised_Source_Niche) %>%
+  summarize(
+          
+    minimum = min(Count_of_metal_elements),
+    median = median(Count_of_metal_elements),
+    mean = mean(Count_of_metal_elements),
+    max = max(Count_of_metal_elements),
+    iqr = IQR(Count_of_metal_elements),
+    p_value = wilcox.test(Count_of_metal_elements, mu = overall_median, alternative = "two.sided")$p.value
+  ) 
+    
+
+# Adjust p-values using Bonferroni correction
+test_results <- test_results %>%
+  mutate(`p.adj` = p.adjust(p_value, method = "bonferroni")) %>%
+        add_significance(p.col = "p.adj") %>%
+        mutate(string_for_paper = paste0(
+                "(min: ", minimum, "; ",
+                "median: ", median, "; ",
+                "mean: ", mean, "; ",
+                "max: ", max, "; ",
+                "p-value: ", `p.adj`, ")"))
+
+print(test_results)
+```
+
+
+```{r}
+Supp_Fig_1 <- amrfinder %>%
+    # Filter for the desired Element type                        
+    filter(`Element type` == "STRESS") %>%
+    # Join with metadata
+    left_join(small_meta, by = 'name') %>%
+    # Rename our gene column
+    rename("GENE" =`Gene symbol`) %>%
+        mutate(GENE = paste0(GENE, " _ ", Reported_Class)) %>%
+    # Convert Revised_Source_Niche to a character
+    mutate(Revised_Source_Niche = as.character(Revised_Source_Niche)) %>% select(name, GENE, Revised_Source_Niche) %>% mutate(Present = 1) %>% left_join(small_meta) %>% select(name, GENE, Present, Revised_Source_Niche, `Count of Source`) %>% group_by(Revised_Source_Niche, `Count of Source`, GENE) %>% tally() %>% mutate(perc = n/`Count of Source`) %>% ungroup() %>% select(Revised_Source_Niche, GENE, perc) %>% pivot_wider(values_from = 'perc', names_from = 'GENE', values_fill = 0) %>% column_to_rownames('Revised_Source_Niche') %>% t() %>% pheatmap(display_numbers = T, color = colorRampPalette(c("white", "red"))(100), fontsize = 8, fontsize_number = 8, fontsize_row = 8, fontsize_col = 8, cluster_rows = T, cluster_cols = T, show_colnames = T, show_rownames = T, main = "Stress Genes by Source Niche")
+
+```
+
+```{r}
+
+```
+
+
+```{r}
+source("R/04_genotype.R", local = TRUE)
+```
+
+## IS elements - Figure 2C
+
+```{r}
+
+# Plot our IS data
+IS_data <- genotype %>%
+        # Filter for the desired Element type
+        filter(`DATABASE` == "IS") %>%
+        # Split out the IS group and family
+        separate(GENE, c("IS", "IS_family", "IS_group"), sep = "_", remove = FALSE) %>%
+        # Join with 'name_source_phylo' on 'name'
+        left_join(name_source_phylo, by = 'name') %>%
+        
+        # Group by Revised_Source_Niche and Reported_Class, then count occurrences
+        select(name, Revised_Source_Niche, IS_family, `Count of Source`) %>%
+        
+        unique() %>%
+        
+        # Group by Revised_Source_Niche and Reported_Class, then count occurrences
+        group_by(Revised_Source_Niche, IS_family, `Count of Source`) %>%
+        summarise(count = n(), .groups = 'drop') %>%
+        
+        # Ensure all combinations of Revised_Source_Niche and Reported_Class are present
+        complete(Revised_Source_Niche, IS_family, fill = list(count = 0)) %>%
+        
+        # Ungroup our data
+        ungroup()
+        
+# Generate totals across all sources
+ total_IS_data <- IS_data %>%
+         group_by(IS_family) %>%
+         summarise(Revised_Source_Niche = "Total", count = sum(count), `Count of Source` = nrow(sample_names))
+
+#Bind totals to our stress_class_prev_by_source
+IS_data_by_source <- bind_rows(IS_data, total_IS_data)
+ 
+# Calculate the percentage within each Revised_Source_Niche
+IS_data_by_source <- IS_data_by_source %>%
+        group_by(Revised_Source_Niche) %>%
+        mutate(percent = (count / `Count of Source`) * 100) %>%
+        ungroup() %>%
+        # Add in our source counts again
+        mutate(`Count of Source` = replace_na(max(`Count of Source`, na.rm = TRUE), 0)) %>%
+        # Add in our source counts again
+        mutate(percent = replace_na(percent, 0))
+
+#Generate Figure 2C
+Figure_2C <- IS_data_by_source %>%
+        # Reorder fill order
+        mutate(Revised_Source_Niche = factor(Revised_Source_Niche, levels = c(unique(Revised_Source_Niche)))) %>%
+        # Create the ggplot
+        ggplot(aes(x = IS_family, y = percent, fill = Revised_Source_Niche)) +
+        geom_col(position = "dodge") +
+        labs(
+                x = "IS Family",
+                y = "Percentage (%)",
+                fill = "Source Niche"
+        ) +
+        scale_y_continuous(labels = percent_format(scale = 1)) +
+        theme_minimal() +
+        theme(
+                axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)
+        ) +
+        scale_fill_manual(values = source_cols_w_total)
+
+
+```
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(rstatix)
+
+# Prepare the data: Count of IS elements per genome and source niche
+genome_by_IS_count_and_source <- genotype %>%
+        # Filter for the desired Element type
+        filter(`DATABASE` == "IS") %>%
+        # Join with metadata
+        left_join(small_meta, by = 'name') %>%
+        # Convert Revised_Source_Niche to a character
+        mutate(Revised_Source_Niche = as.character(Revised_Source_Niche)) %>%
+        # Select relevant columns
+        select(name, GENE, Revised_Source_Niche) %>%
+        # Group by genome name and source niche
+        group_by(name, Revised_Source_Niche) %>%
+        # Count the number of IS elements per group
+        summarise(Count_of_IS_elements = n(), .groups = 'drop') %>%
+        ungroup()
+
+# Check normality using Shapiro-Wilk test
+normality_checks <- genome_by_IS_count_and_source %>%
+        group_by(Revised_Source_Niche) %>%
+        shapiro_test(Count_of_IS_elements)
+
+print("Shapiro-Wilk Normality Test Results:")
+print(normality_checks)
+
+# Check homogeneity of variances using Levene's test
+variance_check <- genome_by_IS_count_and_source %>%
+        levene_test(Count_of_IS_elements ~ Revised_Source_Niche)
+
+print("Levene's Test for Homogeneity of Variances:")
+print(variance_check)
+
+# These tests demonstrated homogeneity of variance = FALSE and normality = FALSE
+# Therefore we use non-parametric tests
+
+# Perform Pairwise Wilcoxon Tests (Non-Parametric)
+# Ensure that there are at least two groups to compare
+if (length(unique(genome_by_IS_count_and_source$Revised_Source_Niche)) > 1) {
+        pairwise_results <- genome_by_IS_count_and_source %>%
+                # Conduct pairwise Wilcoxon tests on Count_of_IS_elements across Revised_Source_Niche groups
+                pairwise_wilcox_test(
+                        formula = Count_of_IS_elements ~ Revised_Source_Niche,
+                        data = .,
+                        paired = FALSE,
+                        p.adjust.method = "bonferroni"
+                ) %>%
+                # Filter for significant results
+                filter(p.adj < 0.05) %>%
+                # Select relevant columns for reporting
+                select(group1, group2, p.adj) %>%
+                # Arrange by adjusted p-value ascending
+                arrange(p.adj)
+        
+        # Display the significant pairwise comparisons
+        print("Significant Pairwise Wilcoxon Test Results:")
+        print(pairwise_results)
+        
+} else {
+        message("Not enough groups for pairwise Wilcoxon tests.")
+}
+
+# Summary Statistics: Median and Interquartile Range
+summary_stats <- genome_by_IS_count_and_source %>%
+        group_by(Revised_Source_Niche) %>%
+        summarise(
+                min_IS = min(Count_of_IS_elements, na.rm = TRUE),
+                mean_IS = mean(Count_of_IS_elements, na.rm = TRUE),
+                median_IS = median(Count_of_IS_elements, na.rm = TRUE),
+                max_IS = max(Count_of_IS_elements, na.rm = TRUE),
+                IQR_IS = IQR(Count_of_IS_elements, na.rm = TRUE),
+                n = n()
+        )
+
+# Display summary statistics
+print("Summary Statistics by Source Niche:")
+print(summary_stats)
+
+# Make a boxplot of IS element counts by source niche using ggpubr
+p <- genome_by_IS_count_and_source %>%
+        ggboxplot(
+                x = "Revised_Source_Niche",
+                y = "Count_of_IS_elements",
+                color = "Revised_Source_Niche",
+                palette = source_cols,
+                add = "jitter",
+                ylab = "Count of IS Elements",
+                xlab = "Source Niche",
+                ggtheme = theme_minimal()
+        ) #+ stat_compare_means(method = "wilcox.test")
+
+my_comparisons <- combn(unique(genome_by_IS_count_and_source$Revised_Source_Niche), 2, simplify = FALSE)
+
+p + stat_compare_means(aes(group=Revised_Source_Niche), label = "p.signif", method="wilcox.test", hide.ns=T, paired=F, comparisons = my_comparisons)
+
+mean <- mean(genome_by_IS_count_and_source$Count_of_IS_elements, na.rm = TRUE)
+
+# Perform one-sample Wilcoxon tests
+one_sample_results <- genome_by_IS_count_and_source %>%
+    group_by(Revised_Source_Niche) %>%
+    wilcox_test(Count_of_IS_elements ~ 1, 
+                mu = mean, 
+                alternative = "two.sided") %>%
+    adjust_pvalue(method = "bonferroni") %>%  # Adjust p-values for multiple comparisons
+    add_significance(p.col = "p.adj") %>%            # Add significance labels
+    select(Revised_Source_Niche, statistic, p.adj, p.adj.signif)
+
+# Display the results
+print("One-Sample Wilcoxon Test Results:")
+print(one_sample_results)
+
+```
+
+```{r}
+
+
+
+overall_median <- genome_by_IS_count_and_source %>% pull(Count_of_IS_elements) %>% median()
+overall_mean <- genome_by_IS_count_and_source %>% pull(Count_of_IS_elements) %>% mean()
+
+# Perform tests and store p-values
+test_results <- genome_by_IS_count_and_source %>%
+  group_by(Revised_Source_Niche) %>%
+  summarize(
+          
+    minimum = min(Count_of_IS_elements),
+    median = median(Count_of_IS_elements),
+    mean = mean(Count_of_IS_elements),
+    max = max(Count_of_IS_elements),
+    p_value = wilcox.test(Count_of_IS_elements, mu = overall_median, alternative = "two.sided")$p.value
+  ) 
+    
+
+# Adjust p-values using Bonferroni correction
+test_results <- test_results %>%
+  mutate(`p.adj` = p.adjust(p_value, method = "bonferroni")) %>%
+        add_significance(p.col = "p.adj")
+
+print(test_results)
+```
+
+```{r}
+```
+
+```{r}
+```
+
+
+```{r}
+
+
+genewise_amrfinder <- amrfinder %>%
+        #Join to our metadata
+        full_join(small_meta, by = 'name') %>%
+        #Filter to only include AMR elements
+        filter(`Element type` == "AMR") %>%
+        # Group and tally
+        group_by(Revised_Source_Niche, Reported_Class, `Gene symbol`, `Count of Source`) %>%
+        tally(name = "count") %>%
+        # Remove grouping
+        ungroup() %>% 
+        # Ensure all combinations of Revised_Source_Niche and Reported_Class are present
+        complete(Revised_Source_Niche, Reported_Class, `Gene symbol`, fill = list(count = 0)) %>%
+        # Fix NAs in the Count of Source column for combinations which were missing
+        group_by(Revised_Source_Niche) %>%
+        # Add in our source counts again
+        mutate(`Count of Source` = replace_na(max(`Count of Source`, na.rm = TRUE), 0)) %>%
+        #Remove grouping
+        ungroup()
+
+# Generate totals across all sources
+ total_amr_genewise_prev_by_source <- genewise_amrfinder %>%
+         group_by(Reported_Class, `Gene symbol`) %>%
+         reframe(Revised_Source_Niche = "Total", Reported_Class = Reported_Class,  `Gene symbol` = `Gene symbol`, `Count of Source` = nrow(sample_names), count = sum(count)) %>%
+         ungroup() %>%
+         select(all_of(colnames(genewise_amrfinder))) %>%
+         unique()
+
+genewise_amrfinder %>%
+        # Bind in totals
+        bind_rows(total_amr_genewise_prev_by_source) %>%
+        # Generate a column to filter by
+        mutate(filtering_column = paste(Reported_Class, `Gene symbol`, sep = "_")) %>%
+        # Filter out any weird groupings that incorrectly link resistance classes with genes
+        filter(filtering_column %in% paste(amrfinder$Reported_Class, amrfinder$`Gene symbol`, sep = "_")) %>%
+        # Remove that temporary column
+        select(-filtering_column) %>%
+        # Add a percent column
+        mutate(percent = scales::percent(count / `Count of Source`, accuracy = 0.01)) %>%
+        group_by(Revised_Source_Niche) %>%
+        # Make cell contents for our table by combining different columns
+        mutate(cell_contents = paste0(count,"/",`Count of Source`," (",percent,")")) %>% 
+        # Select the columns we want to pivot
+        select(Reported_Class, `Gene symbol`, Revised_Source_Niche, cell_contents) %>%
+        # Pivot the table wide
+        pivot_wider(names_from = `Revised_Source_Niche`, values_from = cell_contents) 
+        
+        
+```
+
+```{r}
+# Table for rare genes
+
+genewise_amrfinder %>%
+    # Bind in totals
+    bind_rows(total_amr_genewise_prev_by_source) %>%
+    # Generate a column to filter by
+    mutate(filtering_column = paste(Reported_Class, `Gene symbol`, sep = "_")) %>%
+    # Filter out any weird groupings that incorrectly link resistance classes with genes
+    filter(filtering_column %in% paste(amrfinder$Reported_Class, amrfinder$`Gene symbol`, sep = "_")) %>%
+    # Remove that temporary column
+    select(-filtering_column) %>%
+    # Add a percent column
+    mutate(percent = count / `Count of Source`, accuracy = 0.01) %>%
+        filter(Revised_Source_Niche == "Total") %>%
+        ungroup() %>%
+        #Categorise rows into rare and common based on the percent of samples they are in
+        mutate(Rarity = case_when(percent < 0.20 ~ "Rare",
+                                percent >= 0.20 & percent < 0.40~ "Uncommon",
+                                percent >= 0.40 & percent < 0.60~ "Common",
+                                percent >= 0.60 & percent < 0.80~ "Freqeunt",
+                                percent >= 0.80 ~ "Ubiquitous"
+                                )) %>%
+        select(Reported_Class, `Gene symbol`, Rarity) %>%
+        group_by(Reported_Class, Rarity) %>%
+        summarise(Genes = paste0(`Gene symbol`, collapse = ", ")) %>%
+        mutate(`Count of resistance loci` = str_count(Genes, ",") + 1)
+```
+

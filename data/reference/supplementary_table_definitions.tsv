@@ -1,0 +1,42 @@
+Field	Definition	Source
+Sample name	Genome identifier from the published M1 supplementary table; used to join to the analysis.	Published M1 supplementary workbook
+Strain name (published)	Strain name as reported in the published M1 supplementary table.	Published M1 supplementary workbook
+Sequence type (published)	Sequence type as reported in the published M1 supplementary table, retained as text.	Published M1 supplementary workbook
+Source niche	Revised broad source niche from the published M1 supplementary table.	Published M1 supplementary workbook
+Source type	Revised source type from the published M1 supplementary table.	Published M1 supplementary workbook
+Isolation site category	Intestinal or extraintestinal category from the published M1 supplementary table.	Published M1 supplementary workbook
+Collection year	Collection year from the published M1 supplementary table; blank means unavailable.	Published M1 supplementary workbook
+Collection	Collection or data source from the published M1 supplementary table.	Published M1 supplementary workbook
+State (published)	State or territory reported in the published M1 supplementary table; blank means unavailable.	Published M1 supplementary workbook
+BioSample accession	BioSample number from the published M1 supplementary table.	Published M1 supplementary workbook
+Assembly accession	Assembly accession from the published M1 supplementary table; blank if not supplied there.	Published M1 supplementary workbook
+Sequence run accession	SRA accession from the published M1 supplementary table; blank if not supplied there.	Published M1 supplementary workbook
+BioProject accession	Bio Project ID from the published M1 supplementary table.	Published M1 supplementary workbook
+IncF RST	IncF replicon sequence type from the published M1 supplementary table.	Published M1 supplementary workbook
+cgMLST cluster (40 allelic distance)	Cluster identifier at 40 allelic distance as reported in the published M1 supplementary table.	Published M1 supplementary workbook
+PopPunk Cluster (Clusters merged by PopPunk are separated by underscores)	PopPunk cluster identifier from the published M1 supplementary table; underscores identify merged clusters.	Published M1 supplementary workbook
+Phylogroup	Consensus phylogroup from the current analysis metadata.	Current analysis
+ColV marker genes detected	1 if genes from at least four of the six existing ColV marker groups meet the criteria; 0 otherwise. This does not confirm ColV plasmid carriage.	Current analysis
+senB detected	1 if the VFDB senB marker is detected, 0 otherwise.	Current analysis
+HPI all 11 markers detected	1 if fyuA/psn, irp1, irp2, ybtA, ybtE, ybtP, ybtQ, ybtS, ybtT, ybtU and ybtX are all detected; marker co-occurrence does not establish genomic context.	Current analysis
+stx detected	1 if any VFDB stx1A, stx1B, stx2A, stx2B or stxA marker is detected, 0 otherwise.	Current analysis
+intI1 detected	1 if the EC custom intI1 marker is detected, 0 otherwise.	Current analysis
+Potential HyPEC	1 if the current analysis assigns at least one IPEC and one ExPEC marker category, 0 otherwise; this is a genotypic classification.	Current analysis
+Pathotype markers EAEC	1 if at least one marker assigned to this pathotype category is detected in the current analysis, 0 otherwise.	Current analysis
+Pathotype markers EPEC	1 if at least one marker assigned to this pathotype category is detected in the current analysis, 0 otherwise.	Current analysis
+Pathotype markers DAEC	1 if at least one marker assigned to this pathotype category is detected in the current analysis, 0 otherwise.	Current analysis
+Pathotype markers EHEC	1 if at least one marker assigned to this pathotype category is detected in the current analysis, 0 otherwise.	Current analysis
+Pathotype markers ETEC	1 if at least one marker assigned to this pathotype category is detected in the current analysis, 0 otherwise.	Current analysis
+Pathotype markers UPEC	1 if at least one marker assigned to this pathotype category is detected in the current analysis, 0 otherwise.	Current analysis
+Pathotype markers EIEC	1 if at least one marker assigned to this pathotype category is detected in the current analysis, 0 otherwise.	Current analysis
+Pathotype markers NMEC	1 if at least one marker assigned to this pathotype category is detected in the current analysis, 0 otherwise.	Current analysis
+AMR gene count core	Count of distinct AMRFinder gene symbols among calls with core scope and AMR element type and subtype.	Current analysis
+AMR class count core	Count of distinct AMRFinder Class values among the same core AMR calls; composite Class labels count as one value.	Current analysis
+MDR core class rule	1 if the core AMR class count is at least 3, 0 otherwise.	Current analysis
+CIA selected gene and subclass rule	1 if a core AMR call matches the selected gene list or the CARBAPENEM or CEPHALOSPORIN subclass; see the current analysis code.	Current analysis
+AMR class count XDR rule	Class count used in the XDR analysis, with beta-lactam subclasses combined and multidrug, efflux and triclosan excluded. It differs from the core AMR class count.	Current analysis
+Virulence genes detected	Semicolon-separated normalised virulence gene names from VFDB core and EC custom calls passing the analysis thresholds. Select a cell to view its full contents.	Current analysis
+AMR genes detected core	Semicolon-separated distinct AMRFinder gene symbols from core AMR calls. Blank indicates no qualifying calls.	Current analysis
+Established QRDR substitutions	Semicolon-separated AMRFinder point calls in the established GyrA/ParC list used in the methods; blank indicates no qualifying calls.	Current analysis
+Published source	https://static-content.springer.com/esm/art%3A10.1038%2Fs41467-024-55103-2/MediaObjects/41467_2024_55103_MOESM3_ESM.xlsx	Published M1 supplementary workbook
+Generation code	R/05_supplementary_table.R	Current repository

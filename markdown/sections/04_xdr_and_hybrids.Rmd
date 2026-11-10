@@ -1,0 +1,337 @@
+## Upset
+
+```{r}
+
+hist(count_of_amr_classes$Count_of_AMR_classes)
+
+AMR_upset_df <- binary_per_AMR_class %>% group_by(name) %>% mutate(classwise_count = sum(Present)) %>% ungroup() %>% filter(classwise_count >= 10) %>% select(-classwise_count) %>% mutate(Present = as.logical(Present)) %>% pivot_wider(names_from = classwise_counting_col, values_from = Present) %>% column_to_rownames('name')
+
+classes <- colnames(AMR_upset_df)
+
+AMR_upset_df <- AMR_upset_df %>% rownames_to_column('name') %>% left_join(small_meta) %>% column_to_rownames('name') 
+
+
+phylogroups_in_upset <- AMR_upset_df %>% pull(Consensus_phylogroup) %>% unique()
+
+clermont_cols_upset <- clermont_cols[names(clermont_cols) %in% phylogroups_in_upset]
+
+AMR_upset_df <- AMR_upset_df %>% rename("Source" = Revised_Source_Niche, "Phylogroup" = Consensus_phylogroup)
+
+figure_6_xdr <- upset(
+        data = AMR_upset_df,
+        intersect = classes,
+        name = "Intersection of ARG classes",
+        height_ratio = 1,
+        width_ratio = 0.1,
+        base_annotations=list(
+        'Intersection size'=intersection_size(
+            counts=TRUE,
+            mapping=aes(fill=Phylogroup),
+            text_colors=c(
+                on_background='black', on_bar='black'
+            )
+        )+ scale_fill_manual(values=clermont_cols_upset
+        )
+    ),
+    annotations = list(
+        'Source Niche'=(
+            ggplot(mapping=aes(fill=Source))
+            + geom_bar(stat='count', position='fill')
+            + scale_y_continuous(labels=scales::percent_format())
+            + scale_fill_manual(values=source_cols)
+            +  labs(y= "Percentage from source")
+            )
+),
+        set_sizes=(
+                upset_set_size()
+                + theme(axis.text.x=element_text(angle=90)))
+)
+
+ggsave(figure_path("Figure_6_xdr_resistance.pdf"), figure_6_xdr,
+       width = 8, height = 10, units = "in", device = "pdf")
+
+ARGs_of_interest <- c("aac(6')-Ib-cr",
+        "aac(6')-Ib-cr5",
+        "blaCTX-M",
+        "blaCTX-M-1",
+        "blaCTX-M-101",
+        "blaCTX-M-104",
+        "blaCTX-M-123",
+        "blaCTX-M-14",
+        "blaCTX-M-15",
+        "blaCTX-M-182",
+        "blaCTX-M-189",
+        "blaCTX-M-220",
+        "blaCTX-M-24",
+        "blaCTX-M-27",
+        "blaCTX-M-3",
+        "blaCTX-M-55",
+        "blaCTX-M-62",
+        "blaCTX-M-65",
+        "blaCTX-M-8",
+        "blaCTX-M-9",
+        "mcr-1.1",
+        "mph(A)",
+        "oqxA",
+        "oqxA2",
+        "oqxB",
+        "oqxB2",
+        "qnrA1",
+        "qnrA6",
+        "qnrB1",
+        "qnrB19",
+        "qnrB2",
+        "qnrB4",
+        "qnrB6",
+        "qnrB7",
+        "qnrD1",
+        "qnrS",
+        "qnrS1",
+        "qnrS13")
+
+names_with_genes_of_interest <- amrfinder %>% filter(`Gene symbol` %in% ARGs_of_interest) %>% pull(name)
+
+amr_heatmap_df <- amrfinder %>% filter(`Element type` == "AMR") %>% filter(name %in% names_with_genes_of_interest) %>% filter(name %in% rownames(AMR_upset_df)) %>% rename("GENE" = `Gene symbol`) %>% select(name, GENE, Present) %>% complete(name, GENE, fill = list(Present = 0)) %>% left_join(small_meta) %>% mutate(name_with_ST = paste0(name, " -- ", if_else(is.na(ST_new), "ST unassigned", paste0("ST", ST_new)), ":", Consensus_phylogroup)) %>% left_join(count_of_amr_classes) %>% left_join(binary_per_AMR_class)  %>% mutate(name_with_ST = as.factor(name_with_ST)) %>% rename('Genome' = name_with_ST, "Virulence Gene" = GENE, "Source" = Revised_Source_Niche)
+
+amr_heatmap_df %>% group_by(Count_of_AMR_classes) %>% heatmap(.row = Genome, .column = `Virulence Gene`, .value = Present,
+                        palette_value = c("grey85", "blue", "red"), 
+        row_names_gp = gpar(fontsize = 7),
+        column_names_gp = gpar(fontsize = 5)) %>% annotation_tile(Source)
+
+```
+AMR Tree
+
+```{r}
+library(ggtree)
+library(ggtreeExtra)
+library(ggnewscale)
+
+XDR_tree <- read.tree(require_input(analysis_inputs$xdr_tree))
+
+XDR_tree <- midpoint_root(XDR_tree)
+
+XDR_meta <- small_meta %>% filter(name %in% XDR_tree$tip.label) %>% select(name, ST_new)
+
+amr_tree_df <- amr_heatmap_df %>% select(name, `Virulence Gene`, Present) %>% rename('Gene' = `Virulence Gene`)
+
+arg_to_reported_class <- amrfinder %>% select(`Gene symbol`, Reported_Class) %>% unique()
+
+amr_tree_df <- left_join(amr_tree_df, arg_to_reported_class, by = c("Gene" = "Gene symbol"))
+
+amr_tree_df <- amr_tree_df %>% arrange(Reported_Class)
+
+gene_order <- amr_tree_df$Gene %>% unique()
+
+amr_tree_df <- amr_tree_df %>% mutate(Gene = factor(Gene, levels = gene_order))
+
+#amr_tree_df <- amr_tree_df %>% mutate(Reported_Class = if_else(Present == 0, "NONE", Reported_Class))
+
+amr_df_names <- amr_tree_df %>% pull(Reported_Class) %>% unique()
+
+# https://sashamaps.net/docs/resources/20-colors/
+amr_df_cols <- 
+        c('#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe', '#008080', '#e6beff', '#9a6324', '#fffac8', '#800000', '#aaffc3', '#808000', '#ffd8b1', '#000075', 'grey80', 'grey60', 'grey40', 'grey20', 'grey0')
+
+names(amr_df_cols) <- amr_df_names
+
+XDR_tree_plot <- ggtree(XDR_tree) %<+% XDR_meta +
+        geom_tiplab(size = 2, align = T) +
+        geom_tiplab(aes(label = paste0("ST",ST_new)), align = T, linetype = NULL,
+                    size = 2, offset = 0.035) +
+        theme(legend.position = "none")
+
+XDR_tree_plot +
+        new_scale_fill() +
+        geom_fruit(data = small_meta,
+                   geom = geom_tile,
+                   mapping = aes(y = name,
+                                 fill = Consensus_phylogroup),
+                   pwidth = 0.01,
+                   offset = 2) +
+        scale_fill_manual(values = clermont_cols) +
+        new_scale_fill() +
+        geom_fruit(data = small_meta,
+                   geom = geom_tile,
+                   mapping = aes(y = name,
+                                 fill = Revised_Source_Niche),
+                   pwidth = 0.01,
+                   offset = 0.5) +
+        scale_fill_manual(values = source_cols) +
+        new_scale_fill() +
+        geom_fruit(data = amr_tree_df,
+                        geom = geom_tile,
+                        mapping = aes(y = name,
+                                      x = Gene,
+                                      fill = as.character(Present)
+                                      ),
+                        pwidth = 12,
+                        offset = 0.25,
+         axis.params=list(
+                         axis="x",
+                         text.angle = 90,
+                         text.size = 2,
+                         line.size = 0,
+                         vjust = 0,
+                         hjust = 1
+                     )) +
+        scale_fill_manual(values = c("0" = "grey80", "1" = "blue4")) +
+        ylim(-10, NA)
+
+
+
+
+```
+
+
+
+```{r}
+focused_VFs <- virulence_df_for_plot %>%
+        filter(
+                grepl('^stx|^tir|^eae|^espA|^escC', GENE) | #EHEC
+                        grepl('^cdtA|^bfpB|^east1', GENE) |         #EPEC
+                        grepl('^eltA|^eastIa|^etpB', GENE) | #ETEC
+                        grepl('^ipaA|^mxiD|^spa13|^iscA', GENE) | #EIEC
+                        grepl('^aafA|^aap|^pet', GENE) | #EAEC
+                        grepl('^draA', GENE) | #DAEC
+                        grepl('^papG|^sfaE|^iroN|^iucD|^fyuA|^senB', GENE) | #UPEC
+                        grepl('^ibeA|^kpsT|^neuC', GENE) #NMEC
+        )
+
+focused_VFs <- focused_VFs %>%
+        mutate(pathotype = NA) %>%
+        mutate(pathotype = if_else(grepl('^stx|^tir|^eae|^espA|^escC', GENE), "EHEC", pathotype)) %>%
+        mutate(pathotype = if_else(grepl('^cdtA|^bfpB|^east1', GENE), "EPEC", pathotype)) %>%
+        mutate(pathotype = if_else(grepl('^eltA|^eastIa|^etpB', GENE), "ETEC", pathotype)) %>%
+        mutate(pathotype = if_else(grepl('^ipaA|^mxi|^spa|^iscA', GENE), "EIEC", pathotype)) %>%
+        mutate(pathotype = if_else(grepl('^aafA|^aap|^pet', GENE), "EAEC", pathotype)) %>%
+        mutate(pathotype = if_else(grepl('^draA', GENE), "DAEC", pathotype)) %>%
+        mutate(pathotype = if_else(grepl('^papG|^sfaE|^iroN|^iucD|^fyuA|^senB', GENE), "UPEC", pathotype)) %>%
+        mutate(pathotype = if_else(grepl('^ibeA|^kpsT|^neuC', GENE), "NMEC", pathotype))
+
+potential_hybrids <-
+        focused_VFs %>%
+        select(name, pathotype) %>%
+        mutate(pathotype = str_replace(pathotype, "NMEC", "ExPEC")) %>%
+        mutate(pathotype = str_replace(pathotype, "UPEC", "ExPEC")) %>%
+        mutate(pathotype = str_replace(pathotype, "EHEC", "IPEC")) %>%
+        mutate(pathotype = str_replace(pathotype, "EPEC", "IPEC")) %>%
+        mutate(pathotype = str_replace(pathotype, "ETEC", "IPEC")) %>%
+        mutate(pathotype = str_replace(pathotype, "EIEC", "IPEC")) %>%
+        mutate(pathotype = str_replace(pathotype, "EAEC", "IPEC")) %>%
+        mutate(pathotype = str_replace(pathotype, "DAEC", "IPEC")) %>%
+        unique() %>%
+        group_by(name) %>%
+        add_count() %>%
+        filter(n > 1)
+
+potential_hybrid_df <-
+        focused_VFs %>%
+        filter(name %in% potential_hybrids$name)
+
+upset_df <-
+        potential_hybrid_df %>%
+        select(name, Consensus_phylogroup, Revised_Source_Niche, GENE, Present) %>%
+        pivot_wider(names_from = "GENE",
+                    values_from = 'Present',
+                    values_fill = 0) %>% mutate_at(vars(-name,-Consensus_phylogroup, -Revised_Source_Niche), as.logical)
+
+intersect_cols <-
+        upset_df %>% select(-name,-Consensus_phylogroup, -Revised_Source_Niche) %>% colnames()
+
+upset(
+        data = upset_df,
+        intersect = intersect_cols,
+        name = "Consensus_phylogroup",
+        height_ratio = 3,
+        width_ratio = 0.1
+)
+
+upset_pathotype <- potential_hybrid_df %>%
+        select(name, Consensus_phylogroup, Revised_Source_Niche, pathotype, Present) %>%
+        unique() %>%
+        pivot_wider(names_from = "pathotype",
+                    values_from = 'Present',
+                    values_fill = 0) %>% mutate_at(vars(-name,-Consensus_phylogroup, -Revised_Source_Niche), as.logical)
+
+intersect_cols <-
+        upset_pathotype %>% select(-name,-Consensus_phylogroup, -Revised_Source_Niche) %>% colnames()
+
+phylogroups_in_upset <- upset_pathotype %>% pull(Consensus_phylogroup) %>% unique()
+
+clermont_cols_upset <- clermont_cols[names(clermont_cols) %in% phylogroups_in_upset]
+
+upset_pathotype <- left_join(upset_pathotype, count_of_amr_classes, by = "name")
+
+upset_pathotype <- upset_pathotype %>% rename("Source" = Revised_Source_Niche, "Phylogroup" = Consensus_phylogroup)
+
+# Keep the figure's exact intersections available for checking manuscript counts.
+hybrid_isolate_count <- n_distinct(upset_pathotype$name)
+hybrid_intersection_counts <- upset_pathotype %>%
+        count(across(all_of(intersect_cols)), name = "isolates", sort = TRUE)
+
+figure_2_hybrids <- upset(
+        data = upset_pathotype,
+        intersect = intersect_cols,
+        name = "Intersection of pathotype-associated genes",
+        height_ratio = 1,
+        width_ratio = 0.1,
+        base_annotations=list(
+        'Intersection size'=intersection_size(
+            counts=TRUE,
+            mapping=aes(fill=Phylogroup),
+            text_colors=c(
+                on_background='black', on_bar='black'
+            )
+        )+ scale_fill_manual(values=clermont_cols_upset
+        )
+    ),
+    annotations = list(
+        # 1st method - passing list:
+        'Classwise ARG count'=(
+            # note that aes(x=intersection) is supplied by default and can be skipped
+            ggplot(mapping=aes(y=Count_of_AMR_classes, color = Source))
+            # checkout ggbeeswarm::geom_quasirandom for better results!
+            + geom_jitter(na.rm=TRUE, alpha=0.5)
+            + scale_color_manual(values=source_cols)
+            + geom_violin(alpha=0.5, na.rm=TRUE, color = 'black')
+        ),
+        'Source Niche'=(
+            ggplot(mapping=aes(fill=Source))
+            + geom_bar(stat='count', position='fill')
+            + scale_y_continuous(labels=scales::percent_format())
+            + scale_fill_manual(values=source_cols)
+            +  labs(y= "Percentage from source")
+            )
+),
+        set_sizes=(
+                upset_set_size()
+                + theme(axis.text.x=element_text(angle=90)))
+)
+
+ggsave(figure_path("Figure_2_hybrid_pathotypes.pdf"), figure_2_hybrids,
+       width = 8, height = 12.8, units = "in", device = "pdf")
+
+
+focused_VFs %>% filter(name %in% potential_hybrids$name) %>% select(name, GENE, Present) %>% complete(name, GENE, fill = list(Present = 0))  %>% left_join(count_of_amr_classes) %>% left_join(binary_per_AMR_class) %>% group_by(Count_of_AMR_classes) %>% heatmap(.row = name, .column = GENE, .value = Present,
+                        palette_value = c("grey85", "blue", "red"))
+
+shiga_pos_strains <- focused_VFs %>% filter(grepl("^stx", GENE)) %>% pull(name) %>% unique()
+
+focused_VFs %>%
+        filter(name %in% shiga_pos_strains) %>%
+        filter(name %in% potential_hybrids$name) %>%
+        select(name, GENE, Present) %>%
+        complete(name, GENE, fill = list(Present = 0))  %>%
+        left_join(count_of_amr_classes) %>%
+        left_join(binary_per_AMR_class) %>%
+        left_join(small_meta) %>%
+        mutate(name_with_ST = paste0(name, " -- ", if_else(is.na(ST_new), "ST unassigned", paste0("ST", ST_new)), ":", Consensus_phylogroup)) %>%
+        mutate(name_with_ST = as.factor(name_with_ST)) %>%
+        rename('Genome' = name_with_ST, "Virulence Gene" = GENE, "Source" = Revised_Source_Niche) %>%
+        group_by(Count_of_AMR_classes) %>%
+        heatmap(.row = Genome, .column = `Virulence Gene`, .value = Present,
+                        palette_value = c("grey85", "blue", "red")) %>% annotation_tile(Source)
+
+                                                                                                                                                        
+```
+

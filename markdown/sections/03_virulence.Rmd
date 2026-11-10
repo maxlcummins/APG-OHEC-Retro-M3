@@ -1,0 +1,196 @@
+## Virulence - Figure 4
+
+```{r}
+VFDB <- genotype %>%
+    # Filter for the desired Element type
+    filter(`DATABASE` == "VFDB_core")
+
+
+# Remove unwanted genes
+# VFDB <- VFDB %>%
+#         filter(!grepl("\\(ibeB\\)", PRODUCT)) %>% # Remove ibeB
+#         filter(!grepl("\\(ibeC\\)", PRODUCT)) %>% # Remove ibeC
+#         filter(!grepl("\\(aec17\\)", PRODUCT)) %>% # Remove aec20-29 
+#         filter(!grepl("\\(aec18\\)", PRODUCT)) %>% # Remove aec20-29 
+#         filter(!grepl("\\(aec19\\)", PRODUCT)) %>% # Remove aec20-29 
+#         filter(!grepl("\\(aec2[0-9]\\)", PRODUCT)) %>% # Remove aec20-29 
+#         filter(!grepl("\\(aec3[0-9]\\)", PRODUCT)) %>% # Remove aec20-29 
+
+if(length(unique(genotype$name)) < nrow(sample_names)){
+    # Raise an error if some genomes are missing from the VFDB data
+    stop("Some genomes are missing from the VFDB data.")
+
+}
+
+VFDB_plot_df <- VFDB %>%         
+    # Split out the VF metadata
+    separate(PRODUCT, c("GENE_LONG", "VF_name_and_VF_group", "origin_organism"), sep = "\\[", remove = FALSE) %>%
+    # Split out the VF metadata
+    separate(PRODUCT, c("PRODUCT", "VF Category"), sep = " - ", remove = FALSE) %>%
+    # Split out the gene name
+    mutate(`VF Category` = str_replace(`VF Category`, " \\(VFC.*", "")) %>%
+    mutate(GENE = str_replace(PRODUCT, "\\(gb[^)]+\\)", "")) %>%
+    mutate(GENE = str_replace(GENE, "VFG[0-9]+ \\(", "")) %>%
+    mutate(GENE = str_replace(GENE, "\\).*", "")) %>%
+        # Collapse things from the same operon
+    mutate(OPERON = str_replace(GENE, "^([A-z]+)([A-Z])$", "\\1")) %>%
+    mutate(LOCUS = str_replace(GENE, "^([A-z]+)([A-Z])$", "\\2")) %>%
+    dplyr::select(name, GENE, OPERON, LOCUS, `VF Category`) %>%
+        mutate(Present = 1) %>%
+        unique() %>%
+        arrange(OPERON, LOCUS) %>%
+        mutate(LOCUS = if_else(LOCUS == OPERON, "", LOCUS)) %>%
+        group_by(OPERON) %>%
+        mutate(GENES = paste0(OPERON ,paste0(unique(LOCUS), collapse = ""))) %>%
+        ungroup()
+
+virulence_df <- genotype %>% filter(DATABASE == "EC_custom") %>% bind_rows(VFDB_plot_df)
+
+virulence_df <- virulence_df %>% select(name, GENE, DATABASE, Present, `VF Category`, GENES, OPERON, LOCUS)
+
+virulence_df <- virulence_df %>%
+  mutate(`VF Category` = case_when(
+    GENE == "iss_type3~UTI89" ~ "Immune modulation",
+    GENE == "fecA_NC_000913.3" ~ "Nutritional/Metabolic factor",
+    GENE == "yeeT" ~ "Biofilm",
+    GENE == "ompT_chromosomal_O157-H7_NC_002695" ~ "Exoenzyme",
+    GENE == "malX" ~ "Adherence",
+    GENE == "traT" ~ "Immune modulation",
+    GENE == "cjrA_pUTI89_NC_007941" ~ "Nutritional/Metabolic factor",
+    GENE == "cjrB_pUTI89_NC_007941" ~ "Nutritional/Metabolic factor",
+    GENE == "cjrC_pUTI89_NC_007941" ~ "Nutritional/Metabolic factor",
+    GENE == "intI1" ~ "Others",
+    GENE == "pcoA" ~ "Others",
+    GENE == "silA" ~ "Others",
+    GENE == "cvaA" ~ "Exotoxin",
+    GENE == "eitD" ~ "Nutritional/Metabolic factor",
+    GENE == "eitC" ~ "Nutritional/Metabolic factor",
+    GENE == "eitB" ~ "Nutritional/Metabolic factor",
+    GENE == "eitA" ~ "Nutritional/Metabolic factor",
+    GENE == "gimB-marker" ~ "Regulation",
+    GENE == "cvi" ~ "Exotoxin",
+    GENE == "cvaC" ~ "Exotoxin",
+    GENE == "cvaB" ~ "Exotoxin",
+    GENE == "cmi~pAPEC-O1-ColBM" ~ "Exotoxin",
+    GENE == "cma~pAPEC-O1-ColBM" ~ "Exotoxin",
+    GENE == "cbi~pAPEC-O1-ColBM" ~ "Exotoxin",
+    GENE == "cba~pAPEC-O1-ColBM" ~ "Exotoxin",
+    GENE == "etsA" ~ "Effector delivery system",
+    GENE == "ompT_episomal" ~ "Exoenzyme",
+    GENE == "hylF" ~ "Exotoxin",
+    GENE == "tia" ~ "Invasion",
+    GENE == "merA" ~ "Others",
+    GENE == "rfc~O_antigen_polymerase" ~ "Others",
+    GENE == "bor~K12" ~ "Immune modulation",
+    GENE == "gafD" ~ "Adherence",
+    GENE == "terA" ~ "Others",
+    GENE == "intI2" ~ "Others",
+    GENE == "shiD" ~ "Others",
+    GENE == "iss_type2~ETEC-B7a" ~ "Immune modulation",
+    GENE == "subA" ~ "Exotoxin",
+    GENE == "subB" ~ "Exotoxin",
+    GENE == "bmaE" ~ "Adherence",
+    TRUE ~ `VF Category`  # Retain existing category if Gene doesn't match
+  ))
+
+custom_genes_non_vf <- c('intI1', 'pcoA', 'silA', 'terA', 'intI2', 'merA')
+
+virulence_df <- virulence_df %>% filter(GENE %nin% custom_genes_non_vf)
+
+virulence_df <- virulence_df %>% mutate(GENE = str_replace(GENE, "_NC_.*", ""))
+
+virulence_df_for_plot <- virulence_df %>%         
+    dplyr::select(name, GENE, OPERON, LOCUS, `VF Category`, Present) %>%
+        arrange(OPERON, LOCUS) %>%
+        mutate(LOCUS = if_else(LOCUS == OPERON, "", LOCUS)) %>%
+        group_by(OPERON) %>%
+        mutate(GENES = paste0(OPERON ,paste0(unique(LOCUS), collapse = "")))  %>%
+        mutate(GENES = if_else(is.na(GENES), GENE, GENES)) %>%
+        ungroup() %>%
+        left_join(small_meta, by = 'name') %>% unique()
+
+```
+
+
+```{r}
+# Generate our df on VFDB Categories
+virulence_df_for_plot %>%
+        select(name, Consensus_phylogroup, `VF Category`, GENES, Present) %>%
+        filter(Consensus_phylogroup %nin% unwanted_phylos) %>%
+        group_by(name, `VF Category`, Consensus_phylogroup) %>%
+        summarise(`Gene Count` = sum(Present), .groups = 'drop') %>%
+        # Ensure all combinations of Consensus_phylogroup and Reported_Class are present
+        complete(Consensus_phylogroup, `VF Category`, name, fill = list(count = 0)) %>%
+        # Replace NAs in the Gene count column with zeros
+        mutate(`Gene Count` = replace_na(`Gene Count`, 0)) %>%
+        # Remove incorrect combinations of names and phylogroups
+        filter(paste0(name, Consensus_phylogroup) %in% unique(paste0(virulence_df_for_plot$name, virulence_df_for_plot$Consensus_phylogroup))) %>%
+        # Make a boxplot with phylogroup on the x axis, faceted by VF Category
+        ggplot(aes(x = Consensus_phylogroup, y = `Gene Count`, fill = Consensus_phylogroup)) +
+        geom_boxplot() +
+        facet_wrap(~`VF Category`, scales = "free") +
+        theme_minimal() +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+        scale_fill_manual(values = clermont_cols) +
+        scale_y_continuous(limits = c(0, NA))
+```
+
+```{r}
+
+
+# Generate our df on VFDB Categories
+virulence_df_for_plot %>%
+        select(name, Revised_Source_Niche, `VF Category`, GENES, Present) %>%
+        group_by(name, `VF Category`, Revised_Source_Niche) %>%
+        summarise(`Gene Count` = sum(Present), .groups = 'drop') %>%
+        # Ensure all combinations of Revised_Source_Niche and Reported_Class are present
+        complete(Revised_Source_Niche, `VF Category`, name, fill = list(count = 0)) %>%
+        # Replace NAs in the Gene count column with zeros
+        mutate(`Gene Count` = replace_na(`Gene Count`, 0)) %>%
+        # Remove incorrect combinations of names and sources
+        filter(paste0(name, Revised_Source_Niche) %in% unique(paste0(virulence_df_for_plot$name, virulence_df_for_plot$Revised_Source_Niche))) %>%
+        # Make a boxplot with source niche on the x axis, faceted by VF Category
+        ggplot(aes(x = Revised_Source_Niche, y = `Gene Count`, fill = Revised_Source_Niche)) +
+        geom_boxplot() +
+        facet_wrap(~`VF Category`, scales = "free") +
+        theme_minimal() +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+        scale_fill_manual(values = source_cols) +
+        scale_y_continuous(limits = c(0, NA))
+```
+
+```{r}
+library(tidyHeatmap)
+```
+
+# Compute count of ARG classes
+```{r}
+
+count_of_amr_classes <- amrfinder_class_wise %>% mutate(classwise_counting_col = Reported_Class) %>%
+    filter(`Element type` == "AMR") %>% 
+    mutate(classwise_counting_col = str_replace(Reported_Class, " POINT", "")) %>%
+    mutate(classwise_counting_col = if_else(classwise_counting_col %in% c("CEPHALOSPORIN", "BETA-LACTAM", "CARBAPENEM"), "BETA-LACTAM", classwise_counting_col)) %>%
+    mutate(classwise_counting_col = if_else(classwise_counting_col %in% c("FOSFOMYCIN", "FOSMIDOMYCIN"), "PHOSPHONIC ACIDS", classwise_counting_col)) %>%
+    filter(classwise_counting_col %nin% c("MULTIDRUG", "EFFLUX", "TRICLOSAN")) %>%
+    select(name, Present, classwise_counting_col) %>%
+    complete(name, classwise_counting_col, fill = list(Present = 0)) %>% full_join(sample_names) %>% mutate(Present = replace_na(Present, 0)) %>% unique() %>% group_by(name) %>% summarise(Count_of_AMR_classes = sum(Present))
+
+binary_per_AMR_class <- amrfinder_class_wise %>% mutate(classwise_counting_col = Reported_Class) %>%
+    filter(`Element type` == "AMR") %>% 
+    mutate(classwise_counting_col = str_replace(Reported_Class, " POINT", "")) %>%
+    mutate(classwise_counting_col = if_else(classwise_counting_col %in% c("CEPHALOSPORIN", "BETA-LACTAM", "CARBAPENEM"), "BETA-LACTAM", classwise_counting_col)) %>%
+    mutate(classwise_counting_col = if_else(classwise_counting_col %in% c("FOSFOMYCIN", "FOSMIDOMYCIN"), "PHOSPHONIC ACIDS", classwise_counting_col)) %>%
+    filter(classwise_counting_col %nin% c("MULTIDRUG", "EFFLUX", "TRICLOSAN")) %>%
+    select(name, Present, classwise_counting_col) %>%
+    complete(name, classwise_counting_col, fill = list(Present = 0)) %>% full_join(sample_names) %>% mutate(Present = replace_na(Present, 0)) %>% unique()
+
+list_CIA_res_genes <- amrfinder_class_wise %>% mutate(classwise_counting_col = Reported_Class) %>%
+    filter(`Element type` == "AMR") %>% 
+    mutate(classwise_counting_col = str_replace(Reported_Class, " POINT", "")) %>%
+    filter(classwise_counting_col %in% c("MACROLIDE", "QUINOLONE", "CEPHALOSPORIN")) %>%
+    select(name, Present, classwise_counting_col) %>%
+    complete(name, classwise_counting_col, fill = list(Present = 0)) %>% full_join(sample_names) %>% mutate(Present = replace_na(Present, 0)) %>% unique() %>% group_by(name) %>% summarise(Count_of_AMR_genes = sum(Present))
+        
+
+```
+

@@ -1,289 +1,58 @@
-# APG-OHEC-3
+# Australian E. coli genomic analysis
 
-A repository containing supplementary scripts for data processing and visualisation in Watt and Cummins et al, 2025
+This repository contains R analyses of genomic, virulence and antimicrobial resistance data for a collection of 5,471 Australian *Escherichia coli* isolates. The active analysis is `markdown/Nature_Data_Reports_Dec.Rmd`. Manuscript Word documents are kept locally and excluded from Git.
 
-## Usage
+## Repository layout
 
-First, clone the repository and install the required packages using renv:
+- `R/`: input paths and shared data preparation stages used by the active analysis.
+- `markdown/Nature_Data_Reports_Dec.Rmd`: analysis entry point.
+- `markdown/sections/`: downstream analysis and plotting sections, run in order by the entry point.
+- `analysis/`: analysis inputs. Historical intermediate data are retained locally in the ignored `analysis/maybe_unnecessary/` directory.
+- `data/reference/`: published M1 supplementary metadata used for Supplementary Table 1.
+- `delims/`: locally supplied genomic metadata and reference tables.
+- `figures/`: existing figure files; new generated outputs default to `figures/generated/`.
 
-```         
-git clone https://github.com/maxlcummins/APG-OHEC-Retro-M3.git
+Older notebooks and plot-generation blocks are kept locally and ignored by Git; they are not part of the active workflow. Legacy figure PDFs are also retained locally but are not tracked. Generated manuscript outputs are written to `figures/generated/`, which is ignored.
+
+## Inputs and setup
+
+The active workflow requires the paths listed in `R/00_inputs.R`. The reduced input `delims/genometa_analysis.tsv.gz` contains only fields used by the active analysis and can be regenerated from the full metadata file `delims/genometa_n5471.txt` with `python3 scripts/prepare_analysis_metadata.py`. Both metadata files are included in the repository. The reduced file retains sample identifiers, source category, state and collection year; it is not anonymised. Other local metadata files remain ignored. The current genotype dataset is `analysis/genotyping_Nov_2024/genotype.txt.gz`, which is distinct from the older `analysis/genotype.txt.gz`. The workflow reads the compressed genotype file directly if the ignored expanded copy is absent. The cgMLST distances can likewise be read directly from `analysis/cgMLST_dists_5471.txt.gz`, without expanding or removing the archive. The Roary file is not used by the active workflow.
+
+The verification environment uses R 4.3.3. `renv.lock` records the packages and recursive dependencies captured from the working environment, including Bioconductor 3.18. Restore the library with `renv::restore()`. An isolated restore was tested using a copied package cache and a pre-existing `quantreg` binary; a completely fresh restore on the test Mac stopped when source installation of `quantreg` required a Fortran compiler. Direct package versions from the verification run are also recorded in `R/verification_package_versions.txt`. See `R/README.md` for the stage dependencies.
+
+## Run
+
+From the project root, with the required packages and inputs installed:
+
+```r
+rmarkdown::render("markdown/Nature_Data_Reports_Dec.Rmd")
 ```
 
-Then, open the R project and run the following:
+The analysis is sequential and can take substantial time and memory. Set `M3_FIGURE_DIR` to a separate directory before running to redirect generated plots, for example:
 
-```         
-#Install our packages
-renv::restore()
+```r
+Sys.setenv(M3_FIGURE_DIR = "/path/to/output/figures")
+rmarkdown::render("markdown/Nature_Data_Reports_Dec.Rmd")
 ```
 
-This will request a prompt of yes or no to install. Click the output tag below to see what it will look like.
+The workflow exports six figure files using the working order after removal of the ColV–senB–HPI Venn plot. Other generated panels use descriptive filenames. Figure 2 shows exclusive pathotype intersections; the current analysis identifies 736 potential HyPEC genomes. Figure numbering should be checked against the final manuscript before submission.
 
-<details>
+## Manuscript outputs
 
-<summary>Output</summary>
+| Output | Main analysis code |
+| --- | --- |
+| Figure 1 — collection overview | `markdown/Nature_Data_Reports_Dec.Rmd` |
+| Figure 2 — hybrid pathotypes | `markdown/sections/04_xdr_and_hybrids.Rmd` |
+| Figure 3 — hybrid virulence and resistance | `markdown/sections/05_hybrid_tree_and_distances.Rmd` |
+| Figure 4 — hybrid allelic distances | `markdown/sections/05_hybrid_tree_and_distances.Rmd` |
+| Figure 5 — resistance classes by source | `markdown/sections/01_sourcewise_resistance.Rmd` |
+| Figure 6 — XDR resistance classes | `markdown/sections/04_xdr_and_hybrids.Rmd` |
+| Table 1 — characteristics by hybrid sequence type | `markdown/sections/06_virulence_figures_and_summary.Rmd` |
+| Table 2 — clinically important resistance calls by source | `markdown/sections/06_virulence_figures_and_summary.Rmd` |
+| Supplementary Table 1 — per-genome metadata and current genotypes | `R/05_supplementary_table.R` |
 
-```         
-The following package(s) will be updated:
+These sections share the collection, genotype and resistance inputs prepared by the scripts in `R/`; they are run together by the entry point rather than independently.
 
-# Bioconductor ---------------------------------------------------------------
+Tables 1 and 2 are exported as `Table_1_regenerated.csv` and `Table_2_regenerated.csv` in the generated output directory.
 
--   BiocGenerics [\* -\> 0.48.1]
--   ComplexHeatmap [\* -\> 2.18.0]
--   IRanges [\* -\> 2.36.0]
--   treeio [\* -\> 1.26.0]
-
-# Bioconductor 3.18 ----------------------------------------------------------
-
--   BiocVersion [\* -\> 3.18.1]
--   ggtree [\* -\> 3.10.1]
--   S4Vectors [\* -\> 0.40.2]
-
-# CRAN -----------------------------------------------------------------------
-
--   BiocManager [1.30.25 -\> 1.30.22]
--   abind [\* -\> 1.4-5]
--   admisc [\* -\> 0.35]
--   ape [\* -\> 5.8]
--   aplot [\* -\> 0.2.2]
--   askpass [\* -\> 1.2.0]
--   assertthat [\* -\> 0.2.1]
--   backports [\* -\> 1.4.1]
--   base64enc [\* -\> 0.1-3]
--   bit [\* -\> 4.0.5]
--   bit64 [\* -\> 4.0.5]
--   blob [\* -\> 1.2.4]
--   brew [\* -\> 1.0-10]
--   brio [\* -\> 1.1.5]
--   broom [\* -\> 1.0.5]
--   bslib [\* -\> 0.7.0]
--   cachem [\* -\> 1.1.0]
--   callr [\* -\> 3.7.6]
--   car [\* -\> 3.1-2]
--   carData [\* -\> 3.0-5]
--   caret [\* -\> 6.0-94]
--   cellranger [\* -\> 1.1.0]
--   circlize [\* -\> 0.4.16]
--   cli [\* -\> 3.6.2]
--   clipr [\* -\> 0.8.0]
--   clock [\* -\> 0.7.0]
--   clue [\* -\> 0.3-65]
--   colorspace [\* -\> 2.1-0]
--   commonmark [\* -\> 1.9.1]
--   ComplexUpset [\* -\> 1.3.3]
--   conflicted [\* -\> 1.2.0]
--   corrplot [\* -\> 0.92]
--   cowplot [\* -\> 1.1.3]
--   cpp11 [\* -\> 0.4.7]
--   crayon [\* -\> 1.5.2]
--   credentials [\* -\> 2.0.1]
--   curl [\* -\> 5.2.1]
--   data.table [\* -\> 1.15.4]
--   DBI [\* -\> 1.2.2]
--   dbplyr [\* -\> 2.5.0]
--   desc [\* -\> 1.4.3]
--   devtools [\* -\> 2.4.5]
--   diagram [\* -\> 1.6.5]
--   diffobj [\* -\> 0.3.5]
--   digest [\* -\> 0.6.35]
--   doParallel [\* -\> 1.0.17]
--   downlit [\* -\> 0.4.3]
--   dplyr [\* -\> 1.1.4]
--   dtplyr [\* -\> 1.3.1]
--   e1071 [\* -\> 1.7-14]
--   ellipsis [\* -\> 0.3.2]
--   eulerr [\* -\> 7.0.2]
--   evaluate [\* -\> 0.23]
--   fansi [\* -\> 1.0.6]
--   farver [\* -\> 2.1.2]
--   fastmap [\* -\> 1.2.0]
--   fontawesome [\* -\> 0.5.2]
--   forcats [\* -\> 1.0.0]
--   foreach [\* -\> 1.5.2]
--   fs [\* -\> 1.6.4]
--   future [\* -\> 1.33.2]
--   future.apply [\* -\> 1.11.2]
--   gargle [\* -\> 1.5.2]
--   generics [\* -\> 0.1.3]
--   GenSA [\* -\> 1.1.14]
--   gert [\* -\> 2.0.1]
--   GetoptLong [\* -\> 1.0.5]
--   ggalluvial [\* -\> 0.12.5]
--   ggfun [\* -\> 0.1.4]
--   ggplot2 [\* -\> 3.5.1]
--   ggplotify [\* -\> 0.1.2]
--   ggpubr [\* -\> 0.6.0]
--   ggrepel [\* -\> 0.9.5]
--   ggsci [\* -\> 3.0.3]
--   ggsignif [\* -\> 0.6.4]
--   gh [\* -\> 1.4.1]
--   gitcreds [\* -\> 0.1.2]
--   GlobalOptions [\* -\> 0.1.2]
--   globals [\* -\> 0.16.3]
--   glue [\* -\> 1.7.0]
--   googledrive [\* -\> 2.1.1]
--   googlesheets4 [\* -\> 1.1.1]
--   gower [\* -\> 1.0.1]
--   gridExtra [\* -\> 2.3]
--   gridGraphics [\* -\> 0.5-1]
--   gtable [\* -\> 0.3.5]
--   hardhat [\* -\> 1.3.1]
--   harrietr [\* -\> 0.2.3]
--   haven [\* -\> 2.5.4]
--   here [\* -\> 1.0.1]
--   highcharter [\* -\> 0.9.4]
--   highr [\* -\> 0.10]
--   hms [\* -\> 1.1.3]
--   htmltools [\* -\> 0.5.8.1]
--   htmlwidgets [\* -\> 1.6.4]
--   httpuv [\* -\> 1.6.15]
--   httr [\* -\> 1.4.7]
--   httr2 [\* -\> 1.0.1]
--   hues [\* -\> 0.2.0]
--   ids [\* -\> 1.0.1]
--   igraph [\* -\> 2.0.3]
--   ini [\* -\> 0.3.1]
--   ipred [\* -\> 0.9-14]
--   isoband [\* -\> 0.2.7]
--   iterators [\* -\> 1.0.14]
--   jquerylib [\* -\> 0.1.4]
--   jsonlite [\* -\> 1.8.8]
--   knitr [\* -\> 1.46]
--   labeling [\* -\> 0.4.3]
--   later [\* -\> 1.3.2]
--   lava [\* -\> 1.8.0]
--   lazyeval [\* -\> 0.2.2]
--   lifecycle [\* -\> 1.0.4]
--   listenv [\* -\> 0.9.1]
--   lme4 [\* -\> 1.1-35.3]
--   lubridate [\* -\> 1.9.3]
--   magrittr [\* -\> 2.0.3]
--   MatrixModels [\* -\> 0.5-3]
--   matrixStats [\* -\> 1.3.0]
--   memoise [\* -\> 2.0.1]
--   mime [\* -\> 0.12]
--   miniUI [\* -\> 0.1.1.1]
--   minqa [\* -\> 1.2.6]
--   ModelMetrics [\* -\> 1.2.2.2]
--   modelr [\* -\> 0.1.11]
--   munsell [\* -\> 0.5.1]
--   nloptr [\* -\> 2.0.3]
--   numDeriv [\* -\> 2016.8-1.1]
--   openssl [\* -\> 2.1.2]
--   paletteer [\* -\> 1.6.0]
--   parallelly [\* -\> 1.37.1]
--   patchwork [\* -\> 1.2.0]
--   pbkrtest [\* -\> 0.5.2]
--   pheatmap [\* -\> 1.0.12]
--   pillar [\* -\> 1.9.0]
--   pkgbuild [\* -\> 1.4.4]
--   pkgconfig [\* -\> 2.0.3]
--   pkgdown [\* -\> 2.0.9]
--   pkgload [\* -\> 1.3.4]
--   plyr [\* -\> 1.8.9]
--   png [\* -\> 0.1-8]
--   polyclip [\* -\> 1.10-6]
--   polylabelr [\* -\> 0.2.0]
--   polynom [\* -\> 1.4-1]
--   praise [\* -\> 1.0.0]
--   prettyunits [\* -\> 1.2.0]
--   prismatic [\* -\> 1.1.2]
--   pROC [\* -\> 1.18.5]
--   processx [\* -\> 3.8.4]
--   prodlim [\* -\> 2023.08.28]
--   profvis [\* -\> 0.3.8]
--   progress [\* -\> 1.2.3]
--   progressr [\* -\> 0.14.0]
--   promises [\* -\> 1.3.0]
--   proxy [\* -\> 0.4-27]
--   ps [\* -\> 1.7.6]
--   purrr [\* -\> 1.0.2]
--   quantmod [\* -\> 0.4.26]
--   quantreg [\* -\> 5.97]
--   R6 [\* -\> 2.5.1]
--   ragg [\* -\> 1.3.0]
--   rappdirs [\* -\> 0.3.3]
--   rcmdcheck [\* -\> 1.4.0]
--   RColorBrewer [\* -\> 1.1-3]
--   Rcpp [\* -\> 1.0.12]
--   RcppArmadillo [\* -\> 0.12.8.2.1]
--   RcppEigen [\* -\> 0.3.4.0.0]
--   readr [\* -\> 2.1.5]
--   readxl [\* -\> 1.4.3]
--   recipes [\* -\> 1.0.10]
--   rematch [\* -\> 2.0.0]
--   rematch2 [\* -\> 2.1.2]
--   remotes [\* -\> 2.5.0]
--   reprex [\* -\> 2.1.0]
--   reshape2 [\* -\> 1.4.4]
--   rjson [\* -\> 0.2.21]
--   rlang [\* -\> 1.1.3]
--   rlist [\* -\> 0.4.6.2]
--   rmarkdown [\* -\> 2.26]
--   roxygen2 [\* -\> 7.3.1]
--   rprojroot [\* -\> 2.0.4]
--   rstatix [\* -\> 0.7.2]
--   rstudioapi [\* -\> 0.16.0]
--   rversions [\* -\> 2.1.2]
--   rvest [\* -\> 1.0.4]
--   sass [\* -\> 0.4.9]
--   scales [\* -\> 1.3.0]
--   selectr [\* -\> 0.4-2]
--   sessioninfo [\* -\> 1.2.2]
--   shape [\* -\> 1.4.6.1]
--   shiny [\* -\> 1.8.1.1]
--   sourcetools [\* -\> 0.1.7-1]
--   SparseM [\* -\> 1.81]
--   splitstackshape [\* -\> 1.4.8]
--   SQUAREM [\* -\> 2021.1]
--   stringi [\* -\> 1.8.3]
--   stringr [\* -\> 1.5.1]
--   sys [\* -\> 3.4.2]
--   systemfonts [\* -\> 1.0.6]
--   testthat [\* -\> 3.2.1.1]
--   textshaping [\* -\> 0.3.7]
--   tibble [\* -\> 3.2.1]
--   tidyr [\* -\> 1.3.1]
--   tidyselect [\* -\> 1.2.1]
--   tidytree [\* -\> 0.4.6]
--   tidyverse [\* -\> 2.0.0]
--   timechange [\* -\> 0.3.0]
--   timeDate [\* -\> 4032.109]
--   tinytex [\* -\> 0.50]
--   TTR [\* -\> 0.24.4]
--   tzdb [\* -\> 0.4.0]
--   urlchecker [\* -\> 1.0.1]
--   usethis [\* -\> 2.2.3]
--   utf8 [\* -\> 1.2.4]
--   uuid [\* -\> 1.2-0]
--   vctrs [\* -\> 0.6.5]
--   venn [\* -\> 1.12]
--   viridisLite [\* -\> 0.4.2]
--   vroom [\* -\> 1.6.5]
--   waldo [\* -\> 0.5.2]
--   whisker [\* -\> 0.4.1]
--   withr [\* -\> 3.0.0]
--   xfun [\* -\> 0.43]
--   XML [\* -\> 3.99-0.16.1]
--   xml2 [\* -\> 1.3.6]
--   xopen [\* -\> 1.0.1]
--   xtable [\* -\> 1.8-4]
--   xts [\* -\> 0.13.2]
--   yaml [\* -\> 2.3.8]
--   yulab.utils [\* -\> 0.1.4]
--   zip [\* -\> 2.3.1]
--   zoo [\* -\> 1.8-12]
-
-# GitHub ---------------------------------------------------------------------
-
--   abricateR [\* -\> [maxlcummins/abricateR\@HEAD](mailto:maxlcummins/abricateR@HEAD){.email}]
--   ggVennDiagram [\* -\> [gaospecial/ggVennDiagram\@HEAD](mailto:gaospecial/ggVennDiagram@HEAD){.email}]
-
-Do you want to proceed? [Y/n]:
-```
-
-</details>
-
-## Data Visualisation
-
-Data is visualised using the `markdown/Nature_Data_Reports_Dec.Rmd` script. This script generates the figures used in the manuscript.
+Supplementary Table 1 is exported as both TSV and Excel by the active workflow. The Excel workbook contains genome records, gene calls and definitions, and uses the `openxlsx` R package recorded in the lockfile. Its sample-level metadata start from `data/reference/M1_published_Supp_Table_1.xlsx`, the published M1 supplementary workbook, and are joined by sample ID to the current results. The published table has the same 5,471 unique sample IDs as this analysis. Sequence types throughout the analysis come from that workbook; non-numeric values are displayed as unassigned in Figure 1 and excluded from ST-specific summaries. The supplement retains the published values verbatim. The retained sample IDs and location fields are not anonymised.

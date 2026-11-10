@@ -1,0 +1,215 @@
+## HyPEC Tree
+```{r}
+
+HyPEC_tree <- read.tree(require_input(analysis_inputs$hybrid_tree))
+
+HyPEC_tree <- midpoint_root(HyPEC_tree)
+
+HyPEC_meta <- genometa %>% filter(name %in% HyPEC_tree$tip.label) %>% select(name, ST_new, Collection_Year, ectyper..Serotype)
+
+vf_tree_df <- focused_VFs %>% select(name, GENE, Present)
+
+vf_tree_df <- vf_tree_df %>% filter(name %in% HyPEC_tree$tip.label)
+
+vag_to_VF_category <- focused_VFs %>% select(GENE, `VF Category`) %>% rename(VF_category = `VF Category`) %>% unique()
+
+vf_tree_df <- vf_tree_df %>% complete(name, GENE, fill = list(Present = 0))
+
+# Group by GENE and sum the values in the present column
+vf_tree_df <- vf_tree_df %>% group_by(GENE) %>% mutate(count = sum(Present)) %>% ungroup()
+
+# Remove genes which are present in less than 0% of the samples
+vf_tree_df <- vf_tree_df %>% filter(count > 0)
+
+
+vf_tree_df <- left_join(vf_tree_df, vag_to_VF_category)
+
+vf_tree_df <- vf_tree_df %>% arrange(VF_category)
+
+GENE_order <- vf_tree_df$GENE %>% unique()
+
+vf_tree_df <- vf_tree_df %>% mutate(GENE = factor(GENE, levels = GENE_order))
+
+vf_df_names <- vf_tree_df %>% pull(VF_category) %>% unique()
+
+amr_hypec <- amrfinder %>% filter(`Element type` == "AMR") %>% filter(name %in% HyPEC_tree$tip.label) %>% select(name, `Gene symbol`, Present) %>% rename(Gene = `Gene symbol`)
+
+# Group by GENE and sum the values in the present column
+amr_hypec <- amr_hypec %>% group_by(Gene) %>% mutate(count = sum(Present)) %>% ungroup()
+
+# Remove genes which are present in less than 0% of the samples
+amr_hypec <- amr_hypec %>% filter(count > 0) %>% select(-count)
+
+amr_hypec <- amr_hypec %>% complete(name, Gene, fill = list(Present = 0))
+
+ARG_classes <- amrfinder %>% select(`Gene symbol`, Reported_Class) %>% unique() %>% rename(Gene = 'Gene symbol')
+
+amr_hypec <- amr_hypec %>% left_join(ARG_classes) %>% arrange(Reported_Class) 
+
+amr_hypec <- amr_hypec %>% mutate(Gene = factor(Gene, levels = unique(amr_hypec$Gene)))
+
+# https://sashamaps.net/docs/resources/20-colors/
+vf_df_cols <- 
+        c('#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe', '#008080', '#e6beff', '#9a6324', '#fffac8', '#800000', '#aaffc3', '#808000', '#ffd8b1', '#000075', 'grey80', 'grey60', 'grey40', 'grey20', 'grey0')
+
+names(vf_df_cols) <- vf_df_names
+
+HyPEC_tree_plot <- ggtree(HyPEC_tree) %<+% HyPEC_meta +
+        geom_tiplab(aes(label = paste(label, Collection_Year,
+                                      paste0("ST", ST_new), ectyper..Serotype)),
+                    size = 3, align = TRUE) +
+        theme(legend.position = "none")
+
+fruit_df_1 <- small_meta %>% rename('Phylogroup' = Consensus_phylogroup, 'Source' = Revised_Source_Niche)
+fruit_df_2 <- vf_tree_df  %>% mutate(Present = if_else(Present == 0, "Absent", "Present")) %>% rename(`Gene - Virulence` = Present)
+fruit_df_3 <- amr_hypec  %>% mutate(Present = if_else(Present == 0, "Absent", "Present")) %>% rename(`Gene - Resistance` = Present)
+
+colorRampPalette(c("red", "white", "blue"))(100)
+
+figure_3_hybrid_genes <- HyPEC_tree_plot +
+        # Layer for Phylogroup
+        geom_fruit(data = fruit_df_1,
+                   geom = geom_tile,
+                   mapping = aes(y = name,
+                                 fill = Phylogroup),
+                   pwidth = 0.01,
+                   offset = 18) +
+        scale_fill_manual(values = clermont_cols) +
+        new_scale_fill() +
+        # Layer for Source
+        geom_fruit(data = fruit_df_1,
+                   geom = geom_tile,
+                   mapping = aes(y = name,
+                                 fill = Source),
+                   pwidth = 0.01,
+                   offset = 0.7) +
+        scale_fill_manual(values = source_cols) +
+        new_scale_fill() +
+        # Layer for VF Genes
+        geom_fruit(data = fruit_df_2,
+                        geom = geom_tile,
+                        mapping = aes(y = name,
+                                      x = GENE,
+                                      fill = `Gene - Virulence`
+                                      ),
+                        pwidth = 12,
+                        offset = 0.5,
+         axis.params=list(
+                         axis="x",
+                         text.angle = 90,
+                         text.size = 2.5,
+                         line.size = 0,
+                         vjust = 0,
+                         hjust = 1
+                     )) +
+        scale_fill_manual(values = c("Absent" = "grey80", "Present" = "red")) +
+        # Layer for AMR Genes
+        new_scale_fill() +
+        geom_fruit(data = fruit_df_3,
+                        geom = geom_tile,
+                        mapping = aes(y = name,
+                                      x = Gene,
+                                      fill = `Gene - Resistance`
+                                      ),
+                        pwidth = 12,
+                        offset = 0.5,
+         axis.params=list(
+                         axis="x",
+                         text.angle = 90,
+                         text.size = 2.5,
+                         line.size = 0,
+                         vjust = 0,
+                         hjust = 1
+                     )) +
+        scale_fill_manual(values = c("Absent" = "grey80", "Present" = "blue4")) +
+        theme(legend.position = "right") +
+        ylim(-2, NA)
+
+ggsave(figure_path("Figure_3_hybrid_virulence_resistance.pdf"),
+       figure_3_hybrid_genes, width = 12, height = 7.6, units = "in", device = "pdf")
+
+
+
+
+```
+
+```{r}
+
+# Read the local expanded file or the compressed source directly.
+cgMLST_dists <- read_delim(cgmlst_input(), delim = "\t")
+
+# 
+allelic_distance_df <- cgMLST_dists %>%
+        rename('name' = `5471`) %>%
+        filter(name %in% HyPEC_tree$tip.label) %>%
+        select(name, all_of(HyPEC_tree$tip.label)) %>% 
+        column_to_rownames('name') %>%
+        t() %>%
+        as.data.frame() %>%
+        select(all_of(HyPEC_tree$tip.label)) %>%
+        rownames_to_column('sample_1') %>%
+        pivot_longer(cols = -sample_1, names_to = "sample_2") %>%
+        rename("Allelic_Distance" = value) %>%
+        mutate(`Allelic_Distance` = if_else(`Allelic_Distance` > 400, 400, `Allelic_Distance`))
+
+
+tree_order <- HyPEC_tree_plot$data %>% as.data.frame() %>% filter(isTip == T) %>% arrange(y) %>% pull(label)
+
+allelic_distance_df <- allelic_distance_df %>%
+        mutate(sample_1 = factor(sample_1, levels = tree_order)) %>%
+        mutate(sample_2 = factor(sample_2, levels = tree_order))
+
+
+
+HyPEC_tree_plot <- ggtree(HyPEC_tree) %<+% HyPEC_meta +
+        geom_tiplab(size = 3, align = T) +
+        geom_tiplab(aes(label = Collection_Year), size = 3, align = T, linetype = NULL, offset = 0.06) +
+        geom_tiplab(aes(label = paste0("ST",ST_new, " ", ectyper..Serotype)), align = T, linetype = NULL,
+                    size = 3, offset = 0.09) +
+        theme(legend.position = "none")
+
+fruit_df_1 <- small_meta %>% rename('Phylogroup' = Consensus_phylogroup, 'Source' = Revised_Source_Niche)
+fruit_df_2 <- allelic_distance_df %>% rename(`Allelic Distance` = Allelic_Distance)
+
+figure_4_hybrid_distances <- HyPEC_tree_plot +
+    new_scale_fill() +
+    geom_fruit(data = fruit_df_1,
+              geom = geom_tile,
+              mapping = aes(y = name,
+                          fill = Phylogroup),
+              pwidth = 0.01,
+              offset = 11.5) +
+    scale_fill_manual(values = clermont_cols) +
+    new_scale_fill() +
+    geom_fruit(data = fruit_df_1,
+              geom = geom_tile,
+              mapping = aes(y = name,
+                          fill = Source),
+              pwidth = 0.01,
+              offset = 0.7) +
+    scale_fill_manual(values = source_cols) +
+    new_scale_fill() +
+    geom_fruit(data = fruit_df_2, # Use the modified data
+              geom = geom_tile,
+              mapping = aes(y = sample_1,
+                          x = sample_2,
+                          fill = `Allelic Distance`),
+              pwidth = 12,
+              offset = 0.5,
+              axis.params=list(
+                axis="x",
+                text.angle = 90,
+                text.size = 3,
+                line.size = 0,
+                vjust = 0,
+                hjust = 1
+              )) + 
+        scale_fill_distiller(palette = "Spectral", direction = 1) +
+    # Show legend for the heatmap
+    theme(legend.position = "right") +
+    ylim(-5, NA)
+
+ggsave(figure_path("Figure_4_hybrid_allelic_distances.pdf"),
+       figure_4_hybrid_distances, width = 14, height = 6.7, units = "in", device = "pdf")
+```
+

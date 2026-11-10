@@ -1,0 +1,56 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+
+# Manuscript documents and Word temporary files
+*.doc
+*.docx
+*.docm
+~$*
+
+# Local backup archives
+*.tar.gz
+*.tgz
+
+# Local operating system and R output
+.DS_Store
+Rplot.png
+
+# Large local analysis inputs and expanded compressed data
+/analysis/cgMLST_dists_5471.txt
+/analysis/genotype.txt
+/analysis/genotyping_Nov_2024/genotype.txt
+/analysis/gene_presence_absence_roary.csv
+/analysis/gene_presence_absence_roary.csv.gz
+/analysis/genotype.txt.gz
+/analysis/Pairwise_SNP_and_allelic_distances_with_source.txt
+/analysis/abritamr_resistance.txt
+/delims/*
+!/delims/genometa_analysis.tsv.gz
+!/delims/genometa_n5471.txt
+/figures/generated/
+/figures/*.psd
+/figures/Figure_2.png
+/figures/Figure_3A.png
+/figures/Figure_3B.png
+/figures/Figure_3C.png
+/figures/Table_1
+/figures/Table_1.xlsx
+
+# Retained locally as historical analysis and figure exports.
+/analysis/maybe_unnecessary/
+/figures/**/*.pdf
+/figures/2026/
+/markdown/AMR_manuscript.Rmd
+/markdown/IS_elements.Rmd
+/markdown/Nature_Data_Reports.Rmd
+/markdown/Plasmid_Manuscript.Rmd
+/markdown/pangenomics.Rmd
+/markdown/sections/02_resistance_genes.Rmd
+/markdown/legacy/
+/markdown/*.Rmd.backup-*
+/data/reference/M1_Supp_Table_1.tsv
+
+# Empty SKA error logs containing only nohup notices
+analysis/maybe_unnecessary/SKA/**/*.err.log
