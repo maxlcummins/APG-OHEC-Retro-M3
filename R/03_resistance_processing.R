@@ -1,4 +1,4 @@
-# Analysis stage extracted from Nature_Data_Reports_Dec.Rmd.
+# Analysis stage extracted from manuscript_analysis.Rmd.
 #Define our thresholds for coverage and identity
 coverage_threshold <- 90
 identity_threshold <- 90

@@ -1,4 +1,4 @@
-# Analysis stage extracted from Nature_Data_Reports_Dec.Rmd.
+# Analysis stage extracted from manuscript_analysis.Rmd.
 
 #Read in amrfinder data
 amrfinder <- read_delim(require_input(analysis_inputs$resistance), 

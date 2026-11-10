@@ -1,11 +1,11 @@
 # Australian E. coli genomic analysis
 
-This repository contains R analyses of genomic, virulence and antimicrobial resistance data for a collection of 5,471 Australian *Escherichia coli* isolates. The active analysis is `markdown/Nature_Data_Reports_Dec.Rmd`. Manuscript Word documents are kept locally and excluded from Git.
+This repository contains R analyses of genomic, virulence and antimicrobial resistance data for a collection of 5,471 Australian *Escherichia coli* isolates. The active analysis is `markdown/manuscript_analysis.Rmd`. Manuscript Word documents are kept locally and excluded from Git.
 
 ## Repository layout
 
 - `R/`: input paths and shared data preparation stages used by the active analysis.
-- `markdown/Nature_Data_Reports_Dec.Rmd`: analysis entry point.
+- `markdown/manuscript_analysis.Rmd`: analysis entry point.
 - `markdown/sections/`: downstream analysis and plotting sections, run in order by the entry point.
 - `analysis/`: analysis inputs. Historical intermediate data are retained locally in the ignored `analysis/maybe_unnecessary/` directory.
 - `data/reference/`: published M1 supplementary metadata used for Supplementary Table 1.
@@ -25,14 +25,14 @@ The verification environment uses R 4.3.3. `renv.lock` records the packages and 
 From the project root, with the required packages and inputs installed:
 
 ```r
-rmarkdown::render("markdown/Nature_Data_Reports_Dec.Rmd")
+rmarkdown::render("markdown/manuscript_analysis.Rmd")
 ```
 
 The analysis is sequential and can take substantial time and memory. Set `M3_FIGURE_DIR` to a separate directory before running to redirect generated plots, for example:
 
 ```r
 Sys.setenv(M3_FIGURE_DIR = "/path/to/output/figures")
-rmarkdown::render("markdown/Nature_Data_Reports_Dec.Rmd")
+rmarkdown::render("markdown/manuscript_analysis.Rmd")
 ```
 
 The workflow exports six figure files using the working order after removal of the ColV–senB–HPI Venn plot. Other generated panels use descriptive filenames. Figure 2 shows exclusive pathotype intersections; the current analysis identifies 736 potential HyPEC genomes. Figure numbering should be checked against the final manuscript before submission.
@@ -41,7 +41,7 @@ The workflow exports six figure files using the working order after removal of t
 
 | Output | Main analysis code |
 | --- | --- |
-| Figure 1 — collection overview | `markdown/Nature_Data_Reports_Dec.Rmd` |
+| Figure 1 — collection overview | `markdown/manuscript_analysis.Rmd` |
 | Figure 2 — hybrid pathotypes | `markdown/sections/04_xdr_and_hybrids.Rmd` |
 | Figure 3 — hybrid virulence and resistance | `markdown/sections/05_hybrid_tree_and_distances.Rmd` |
 | Figure 4 — hybrid allelic distances | `markdown/sections/05_hybrid_tree_and_distances.Rmd` |

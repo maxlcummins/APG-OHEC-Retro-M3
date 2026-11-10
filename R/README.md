@@ -1,6 +1,6 @@
 # Active analysis stages
 
-`markdown/Nature_Data_Reports_Dec.Rmd` is the analysis entry point. Run it from the project root; its setup chunk sources these scripts in order into the notebook's execution environment:
+`markdown/manuscript_analysis.Rmd` is the analysis entry point. Run it from the project root; its setup chunk sources these scripts in order into the notebook's execution environment:
 
 - `00_inputs.R`: input paths and checks.
 - `01_collection.R`: genomic metadata, tree and isolate-level metadata.

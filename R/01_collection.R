@@ -1,4 +1,4 @@
-# Analysis stage extracted from Nature_Data_Reports_Dec.Rmd.
+# Analysis stage extracted from manuscript_analysis.Rmd.
 
 genometa <- vroom(require_input(analysis_inputs$metadata), show_col_types = FALSE)
 
