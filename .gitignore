@@ -20,7 +20,7 @@ Rplot.png
 # Large local analysis inputs and expanded compressed data
 /analysis/cgMLST_dists_5471.txt
 /analysis/genotype.txt
-/analysis/genotyping_Nov_2024/genotype.txt
+/analysis/genotyping/genotype.txt
 /analysis/gene_presence_absence_roary.csv
 /analysis/gene_presence_absence_roary.csv.gz
 /analysis/genotype.txt.gz
